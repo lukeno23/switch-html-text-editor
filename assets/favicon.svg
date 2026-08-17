@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The Switch geometric motif: a 2×2 grid of rounded forms. -->
+  <rect width="32" height="32" fill="#edf4ed"/>
+  <path d="M1,16 L1,8.5 A7.5,7.5 0 0 1 16,8.5 L16,16 Z" fill="#2f3f28"/>
+  <path d="M16,1 L31,1 L31,8.5 A7.5,7.5 0 0 1 16,8.5 Z" fill="#a5c869"/>
+  <path d="M1,16 L16,16 L16,23.5 A7.5,7.5 0 0 1 1,23.5 Z" fill="#2f3f28"/>
+  <path d="M16,16 L31,16 L31,23.5 A7.5,7.5 0 0 1 16,23.5 Z" fill="#2f3f28"/>
+</svg>

@@ -1,0 +1,250 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+
+import {
+  scanDocument, instrument, applyEdits, decodeEntities, encodeText,
+} from '../src/patch-engine.js';
+
+/* ------------------------------------------------------------------ helpers */
+
+// Every run must be re-derivable from the source at its recorded offsets, and
+// runs must never overlap or run backwards.
+function assertOffsetsSound(scan) {
+  let prevEnd = 0;
+  for (const r of scan.runs) {
+    assert.equal(scan.source.slice(r.start, r.end), r.raw, `run ${r.index} raw mismatch`);
+    assert.ok(r.start >= prevEnd, `run ${r.index} overlaps previous`);
+    assert.ok(r.end > r.start, `run ${r.index} is empty`);
+    prevEnd = r.end;
+  }
+}
+
+// Setting every run back to its own current text must be a total no-op.
+function assertNoOpIsByteIdentical(scan) {
+  const edits = scan.runs.map((r) => ({ index: r.index, text: r.text }));
+  const { html, changed } = applyEdits(scan, edits);
+  assert.equal(changed, 0, 'no-op edits should collapse to zero changes');
+  assert.equal(html, scan.source, 'no-op must return byte-identical source');
+}
+
+/* ------------------------------------------------------------- entity codec */
+
+test('entity decode handles named, decimal and hex forms', () => {
+  assert.equal(decodeEntities('a &amp; b'), 'a & b');
+  assert.equal(decodeEntities('&lt;tag&gt;'), '<tag>');
+  assert.equal(decodeEntities('caf&#233;'), 'café');
+  assert.equal(decodeEntities('caf&#xE9;'), 'café');
+  assert.equal(decodeEntities('a&nbsp;b'), 'a b');
+  assert.equal(decodeEntities('no entities here'), 'no entities here');
+  assert.equal(decodeEntities('&notarealentity;'), '&notarealentity;');
+});
+
+test('encode escapes only what changes parsing, and keeps NBSP named', () => {
+  assert.equal(encodeText('a & b'), 'a &amp; b');
+  assert.equal(encodeText('<b>'), '&lt;b&gt;');
+  assert.equal(encodeText('a b'), 'a&nbsp;b');
+  assert.equal(encodeText("quotes ' and \" survive"), "quotes ' and \" survive");
+});
+
+test('decode/encode round-trips the entities we emit', () => {
+  for (const raw of ['a &amp; b', '&lt;x&gt;', 'a&nbsp;b', 'plain text']) {
+    assert.equal(encodeText(decodeEntities(raw)), raw);
+  }
+});
+
+/* -------------------------------------------------------- scanner behaviour */
+
+test('scanner skips script and style interiors entirely', () => {
+  const src = [
+    '<html><head><style>p { content: "<not a tag>"; }</style></head>',
+    '<body><script>var a = 1 < 2; document.write("<p>nope</p>");</script>',
+    '<p>real text</p></body></html>',
+  ].join('');
+  const scan = scanDocument(src);
+  assertOffsetsSound(scan);
+
+  const editableText = scan.editable.map((r) => r.text);
+  assert.deepEqual(editableText, ['real text']);
+  for (const r of scan.runs) {
+    assert.ok(!r.raw.includes('content:'), 'style interior leaked into a run');
+    assert.ok(!r.raw.includes('document.write'), 'script interior leaked into a run');
+  }
+});
+
+test("scanner is not fooled by '>' inside an attribute value", () => {
+  const src = '<p title="a > b" data-x=\'c > d\'>text</p>';
+  const scan = scanDocument(src);
+  assertOffsetsSound(scan);
+  assert.deepEqual(scan.editable.map((r) => r.text), ['text']);
+});
+
+test('scanner skips comments, doctype, head and svg content', () => {
+  const src = [
+    '<!DOCTYPE html><html><head><title>Title</title></head><body>',
+    '<!-- a comment with <p>markup</p> inside -->',
+    '<svg><text>logo text</text></svg>',
+    '<p>editable</p></body></html>',
+  ].join('');
+  const scan = scanDocument(src);
+  assertOffsetsSound(scan);
+  assert.deepEqual(scan.editable.map((r) => r.text), ['editable']);
+});
+
+test('whitespace-only runs are tracked but never editable', () => {
+  const scan = scanDocument('<div>\n  <p>hi</p>\n</div>');
+  assertOffsetsSound(scan);
+  assert.ok(scan.runs.some((r) => r.wsOnly), 'expected whitespace runs to exist');
+  assert.deepEqual(scan.editable.map((r) => r.text), ['hi']);
+});
+
+test('editable ordinals are per-element, not global', () => {
+  const scan = scanDocument('<p>one <b>bold</b> two</p><p>three</p>');
+  const byEl = new Map();
+  for (const r of scan.editable) {
+    if (!byEl.has(r.elementId)) byEl.set(r.elementId, []);
+    byEl.get(r.elementId).push([r.text, r.editableOrdinal]);
+  }
+  // First <p> directly owns "one " and " two"; "bold" belongs to <b>.
+  const firstP = [...byEl.values()].find((v) => v.some(([t]) => t === 'one '));
+  assert.deepEqual(firstP, [['one ', 0], [' two', 1]]);
+  const bold = [...byEl.values()].find((v) => v.some(([t]) => t === 'bold'));
+  assert.deepEqual(bold, [['bold', 0]]);
+});
+
+/* --------------------------------------------------------- instrumentation */
+
+test('instrument adds only attributes, and only to elements holding text', () => {
+  const src = '<div><section><p>hi</p></section></div>';
+  const scan = scanDocument(src);
+  const out = instrument(scan);
+
+  // Exactly one element (<p>) directly contains editable text.
+  const hits = [...out.matchAll(/ data-hep="\d+"/g)];
+  assert.equal(hits.length, 1);
+  assert.match(out, /<p data-hep="\d+">hi<\/p>/);
+
+  // Stripping the injected attributes must restore the original byte-for-byte.
+  assert.equal(out.replace(/ data-hep="\d+"/g, ''), src);
+});
+
+test('instrument places the attribute before the slash of a self-closing tag', () => {
+  const scan = scanDocument('<div><p>hi</p><br/></div>');
+  const out = instrument(scan);
+  assert.ok(!out.includes('/ data-hep'), 'attribute must not land after the slash');
+  assert.equal(out.replace(/ data-hep="\d+"/g, ''), '<div><p>hi</p><br/></div>');
+});
+
+/* ------------------------------------------------------------ edit application */
+
+test('a single edit changes only that run', () => {
+  const src = '<p>alpha</p><p>beta</p><p>gamma</p>';
+  const scan = scanDocument(src);
+  const beta = scan.editable.find((r) => r.text === 'beta');
+
+  const { html, changed } = applyEdits(scan, [{ index: beta.index, text: 'BETA REWRITTEN' }]);
+  assert.equal(changed, 1);
+  assert.equal(html, '<p>alpha</p><p>BETA REWRITTEN</p><p>gamma</p>');
+});
+
+test('edits are encoded on the way in', () => {
+  const scan = scanDocument('<p>plain</p>');
+  const run = scan.editable[0];
+  const { html } = applyEdits(scan, [{ index: run.index, text: 'Tom & Jerry <ok>' }]);
+  assert.equal(html, '<p>Tom &amp; Jerry &lt;ok&gt;</p>');
+});
+
+test('multiple edits apply independently and keep surrounding bytes intact', () => {
+  const src = '<h1>Title</h1>\n<p>first</p>\n<p>second</p>';
+  const scan = scanDocument(src);
+  const pick = (t) => scan.editable.find((r) => r.text === t).index;
+  const { html, changed } = applyEdits(scan, [
+    { index: pick('second'), text: '2nd' },
+    { index: pick('Title'), text: 'New Title' },
+  ]);
+  assert.equal(changed, 2);
+  assert.equal(html, '<h1>New Title</h1>\n<p>first</p>\n<p>2nd</p>');
+});
+
+test('unchanged runs are dropped even when submitted alongside real edits', () => {
+  const scan = scanDocument('<p>keep</p><p>change</p>');
+  const keep = scan.editable.find((r) => r.text === 'keep');
+  const change = scan.editable.find((r) => r.text === 'change');
+  const { html, changed } = applyEdits(scan, [
+    { index: keep.index, text: 'keep' },
+    { index: change.index, text: 'changed' },
+  ]);
+  assert.equal(changed, 1);
+  assert.equal(html, '<p>keep</p><p>changed</p>');
+});
+
+test('overlapping edits are rejected rather than silently merged', () => {
+  const scan = scanDocument('<p>text</p>');
+  const run = scan.editable[0];
+  const fake = { index: run.index, text: 'a' };
+  // Fabricate a second run that overlaps the first to prove the guard fires.
+  scan.runs.push({ ...run, index: scan.runs.length, start: run.start, end: run.end });
+  assert.throws(
+    () => applyEdits(scan, [fake, { index: scan.runs.length - 1, text: 'b' }]),
+    /overlapping edits/,
+  );
+});
+
+test('an unknown run index is an error, not a silent skip', () => {
+  const scan = scanDocument('<p>text</p>');
+  assert.throws(() => applyEdits(scan, [{ index: 9999, text: 'x' }]), /no run at index/);
+});
+
+/* --------------------------------------------- the real Switch white paper */
+
+/*
+ * Round-trip tests against a real production document. Point HEP_FIXTURE at a
+ * self-contained Switch HTML file, or drop one in test/fixtures/, and these run;
+ * otherwise they skip. Real documents are never committed — see .gitignore.
+ *
+ *   HEP_FIXTURE="/path/to/document.html" npm test
+ */
+const REAL_FILE = process.env.HEP_FIXTURE
+  || new URL('./fixtures/document.html', import.meta.url).pathname;
+
+test('real document: scan, no-op and surgical edit', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
+  const src = readFileSync(REAL_FILE, 'utf8');
+  const scan = scanDocument(src);
+
+  assertOffsetsSound(scan);
+  assertNoOpIsByteIdentical(scan);
+
+  // Sanity: the document has real prose, and the embedded fonts are untouched.
+  assert.ok(scan.editable.length > 200, `expected lots of editable runs, got ${scan.editable.length}`);
+  for (const r of scan.runs) {
+    assert.ok(!r.raw.includes('data:font/woff2'), 'a font blob leaked into a text run');
+    assert.ok(!r.raw.includes('@font-face'), 'CSS leaked into a text run');
+  }
+
+  // The build markers the Switch pipeline depends on must survive instrumentation.
+  const inst = instrument(scan);
+  assert.ok(inst.includes('===FONTS-START==='), 'FONTS-START marker lost');
+  assert.ok(inst.includes('===FONTS-END==='), 'FONTS-END marker lost');
+  assert.equal(inst.replace(/ data-hep="\d+"/g, ''), src, 'instrumentation was not attribute-only');
+
+  // Edit one run and prove the diff is exactly one contiguous region.
+  const target = scan.editable.find((r) => r.text.trim().length > 25);
+  const replacement = 'REPLACEMENT SENTINEL TEXT';
+  const { html, changed } = applyEdits(scan, [{ index: target.index, text: replacement }]);
+  assert.equal(changed, 1);
+
+  assert.equal(html.slice(0, target.start), src.slice(0, target.start), 'bytes before the edit moved');
+  assert.equal(html.slice(target.start + replacement.length), src.slice(target.end), 'bytes after the edit moved');
+  assert.equal(html.length, src.length - target.raw.length + replacement.length);
+});
+
+test('real document: every editable run round-trips through encode/decode', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
+  const src = readFileSync(REAL_FILE, 'utf8');
+  const scan = scanDocument(src);
+  const broken = scan.editable.filter((r) => encodeText(r.text) !== r.raw);
+  assert.deepEqual(
+    broken.map((r) => ({ index: r.index, raw: r.raw.slice(0, 60) })),
+    [],
+    'these runs would be rewritten by an edit-and-revert cycle',
+  );
+});

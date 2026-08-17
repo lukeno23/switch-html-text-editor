@@ -1,0 +1,12 @@
+# This repo is intended to be PUBLIC (GitHub Pages on a free account).
+# Client documents must never be committed. The editor is 100% client-side —
+# documents are opened in the browser and never travel anywhere.
+*.html
+!index.html
+!test/fixtures/*.html
+*.pdf
+*.docx
+*.xlsx
+
+node_modules/
+.DS_Store

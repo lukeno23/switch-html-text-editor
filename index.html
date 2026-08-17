@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Switch — HTML Text Editor</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<style>
+/* ===================================================================
+   Switch HTML Text Editor — chrome styled to the Switch design system
+   (Kit v1.1). Brand fonts are local WOFF2, never Google Fonts.
+   =================================================================== */
+
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 400;
+  src: url(assets/fonts/DMSans-400.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 500;
+  src: url(assets/fonts/DMSans-500.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 700;
+  src: url(assets/fonts/DMSans-700.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'Source Serif 4'; font-style: normal; font-weight: 400;
+  src: url(assets/fonts/SourceSerif4-400.woff2) format('woff2'); font-display: swap; }
+
+:root {
+  /* Canonical Switch "Shades of Sage" values. */
+  --green-unknown: #2f3f28;
+  --curious-garden: #3d4a2e;
+  --bean-green: #a5c869;
+  --misty-mint: #edf4ed;
+  --possible-purple: #d2beff;
+  --white: #ffffff;
+  --body-text: #2c2c2c;
+  --muted: #888888;
+  --border: #e0e0e0;
+
+  /* Tool-chrome alert colours. The palette has none, because it describes
+     documents, not interfaces. --alert is the exact red both templates already
+     use for their overflow badge, so a warning here matches the warning drawn
+     on the page itself. --caution is its lower-severity partner. */
+  --alert: #c0392b;
+  --caution: #c9821f;
+
+  /* Hairlines on dark green, where curious-garden is too close to read. */
+  --rule-on-dark: rgba(237, 244, 237, 0.16);
+  --rule-on-dark-strong: rgba(237, 244, 237, 0.34);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--misty-mint);
+  background: var(--green-unknown);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+#bar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  background: var(--green-unknown);
+  border-bottom: 1px solid var(--rule-on-dark);
+  position: relative;
+  z-index: 3;
+}
+
+/* The real logotype, recoloured via currentColor — misty-mint on dark, exactly
+   as the templates do it. Never a text approximation. */
+#bar .logo { width: 68px; color: var(--misty-mint); flex: none; }
+#bar .logo svg { display: block; width: 100%; height: auto; }
+
+#bar .rule { width: 1px; height: 20px; background: var(--rule-on-dark-strong); flex: none; }
+
+#bar .name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 38vw;
+}
+#bar .name.empty { color: rgba(237, 244, 237, 0.5); font-weight: 400; }
+
+#bar .spacer { flex: 1; }
+
+/* Status pills */
+.pill {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.pill        { color: var(--misty-mint); border-color: var(--rule-on-dark-strong); }
+.pill.ok     { background: var(--bean-green); color: var(--green-unknown); border-color: var(--bean-green); }
+.pill.warn   { background: var(--caution);    color: #241703; border-color: var(--caution); }
+.pill.bad    { background: var(--alert);      color: var(--white); border-color: var(--alert); }
+/* Possible-purple is reserved for numbered things — here, the edit count. */
+.pill.count  { background: var(--possible-purple); color: var(--green-unknown); border-color: var(--possible-purple); }
+
+/* Buttons */
+button {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--misty-mint);
+  background: transparent;
+  border: 1px solid var(--rule-on-dark-strong);
+  border-radius: 6px;
+  padding: 6px 13px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, opacity .12s;
+}
+button:hover:not(:disabled) { background: var(--curious-garden); border-color: var(--bean-green); }
+button:disabled { opacity: .35; cursor: default; }
+
+button.primary {
+  background: var(--bean-green);
+  border-color: var(--bean-green);
+  color: var(--green-unknown);
+  font-weight: 700;
+}
+button.primary:hover:not(:disabled) { filter: brightness(1.07); background: var(--bean-green); }
+
+/* Solid button for use on the light empty state. */
+button.on-light {
+  background: var(--green-unknown);
+  border-color: var(--green-unknown);
+  color: var(--misty-mint);
+  font-weight: 500;
+  padding: 9px 20px;
+  font-size: 14px;
+}
+button.on-light:hover { background: var(--curious-garden); border-color: var(--curious-garden); }
+
+/* -------------------------------------------------------------------- stage */
+
+#stage { position: absolute; inset: 52px 0 0 0; background: var(--green-unknown); }
+#frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+
+/* --------------------------------------------------- empty state / dropzone */
+
+/* Light panel against the dark chrome — the light/dark alternation the brand
+   uses between covers and content. */
+#drop {
+  position: absolute;
+  inset: 52px 0 0 0;
+  z-index: 2;
+  background: var(--misty-mint);
+  color: var(--body-text);
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  overflow: hidden;
+}
+#drop.hidden { display: none; }
+
+#drop .inner {
+  max-width: 620px;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  border: 2px dashed transparent;
+  border-radius: 14px;
+  padding: 34px 38px;
+  transition: border-color .12s, background .12s;
+}
+#drop.over .inner { border-color: var(--bean-green); background: rgba(165, 200, 105, 0.12); }
+
+/* Cover-title treatment: DM Sans 500, primary words green-unknown, accent word
+   bean-green. */
+#drop h1 {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  margin: 0 0 16px;
+  color: var(--green-unknown);
+}
+#drop h1 .accent { color: var(--bean-green); }
+
+/* Cover-meta treatment: Source Serif 4, used sparingly. */
+#drop .meta {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--body-text);
+  margin: 0 0 26px;
+}
+
+/* Arrow bullets — → in bean-green, the brand's bullet. */
+#drop ul {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  max-width: 470px;
+}
+#drop ul li {
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 9px;
+  font-size: 13.5px;
+  color: var(--body-text);
+}
+#drop ul li::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: var(--bean-green);
+  font-weight: 700;
+}
+
+/* Callout device: 3px bean-green left border. Alert-red when the browser can't
+   save at all, since that changes what the user should do. */
+#drop .note {
+  border-left: 3px solid var(--bean-green);
+  background: var(--white);
+  padding: 13px 16px;
+  margin-top: 30px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--body-text);
+  text-align: left;
+}
+#drop .note.bad { border-left-color: var(--alert); }
+#drop .note strong { font-weight: 700; color: var(--green-unknown); }
+#drop .note.bad strong { color: var(--alert); }
+
+/* The geometric motif — 2×2 rounded forms, bottom-left, as on document covers. */
+#drop .motif {
+  position: absolute;
+  bottom: 44px;
+  left: 44px;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  opacity: .9;
+  pointer-events: none;
+}
+#drop .motif i { display: block; }
+#drop .motif .tl { background: var(--green-unknown); border-radius: 50% 50% 0 0; }
+#drop .motif .tr { background: var(--bean-green);    border-radius: 0 0 50% 50%; }
+#drop .motif .bl { background: var(--green-unknown); border-radius: 0 0 50% 50%; }
+#drop .motif .br { background: var(--green-unknown); border-radius: 0 0 50% 50%; }
+
+@media (max-height: 620px), (max-width: 900px) { #drop .motif { display: none; } }
+
+/* -------------------------------------------------------------------- panel */
+
+#panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 2;
+  background: var(--green-unknown);
+  border-top: 1px solid var(--rule-on-dark);
+  max-height: 38%;
+  overflow: auto;
+  padding: 13px 16px 15px;
+  display: none;
+}
+#panel.show { display: block; }
+
+#panel h2 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--bean-green);
+  margin: 0 0 10px;
+}
+
+#panel ul { list-style: none; margin: 0; padding: 0; }
+#panel li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 0 7px 13px;
+  border-left: 3px solid var(--alert);
+  margin-bottom: 5px;
+  background: rgba(192, 57, 43, 0.1);
+}
+#panel li:last-child { margin-bottom: 0; }
+#panel .who { font-weight: 700; min-width: 74px; color: var(--misty-mint); }
+#panel .what { color: rgba(237, 244, 237, 0.72); flex: 1; }
+#panel a {
+  color: var(--bean-green);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+#panel a:hover { text-decoration: underline; }
+
+/* -------------------------------------------------------------------- toast */
+
+#toast {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(14px);
+  z-index: 5;
+  max-width: 66vw;
+  background: var(--green-unknown);
+  color: var(--misty-mint);
+  border: 1px solid var(--rule-on-dark);
+  border-left: 3px solid var(--bean-green);
+  border-radius: 6px;
+  padding: 11px 18px;
+  font-size: 12.5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .16s, transform .16s;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.bad { border-left-color: var(--alert); }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <!-- The real Switch logotype (1080×340), recoloured via currentColor. -->
+  <span class="logo" aria-label="Switch">
+    <svg viewBox="0 0 1080 340" role="img" aria-hidden="true">
+      <g fill="currentColor">
+        <path d="M791.18,262.32c-25.24,5.51-49.06-5.89-60.24-28.94-10.05-20.71-9.63-53.96,3.29-76.65,9.54-16.76,28.41-26.45,47.59-24.27,8.43.96,17.32,4.46,23.34,13.55-11.97,4.8-15.9,20-8.5,30.53,12.31,17.53,37.95,7.9,38.26-13.31.33-23.25-24.66-38.35-44.95-41.97-43.36-7.75-89.28,14.67-99.6,59.23-13.32,57.49,31,105.78,89.21,100.36,33.13-3.08,56.83-25.85,59.22-59.3l-12.2-3.09c-2.81,20.9-13.64,39.12-35.41,43.87Z"/>
+        <path d="M662.6,220.63c-.03,15.51-1.46,41.82-21.65,43.63-15.23,1.36-24.27-6.5-25.16-21.57v-107.58h52.93v-12.22h-52.92v-41.89h-11.25c-4.18,23.8-24.95,41.89-49.97,41.89v12.22h27.09v104.53c1.5,31.58,28.51,45.75,57.83,40.64,29.28-5.1,35.3-34.15,34.9-59.64h-11.81Z"/>
+        <path d="M144.92,151.55c-23.56-5.32-67.84-7.18-68.16-39.81-.28-28.58,30.53-35.67,53.46-31.05,29.41,5.92,48.34,32.49,58.93,58.6l12.7-4.19-9.19-65.88h-11.81c-.62,5.61-1.36,12.05-8.54,11.8-6.02-.21-18.98-7.82-25.67-10.18-43.01-15.12-107.09,5.2-101.79,59.67,3.11,31.97,36.82,45.69,63.92,52.29,23.46,5.71,67.1,6.85,71.96,36.41,5.76,35.07-26.19,53.84-57.7,47.54-32.66-6.54-57.12-39.03-70.33-67.51l-12.72,4.28,11.85,74.71h12.24c.34-10.3,4.64-19.18,16.48-14.92,12.32,4.44,21.74,12.99,35.92,16.09,49.96,10.92,111.01-24.28,95.48-81.31-8.07-29.61-40.18-40.48-67.05-46.55Z"/>
+        <path d="M1029.07,233.74c-.16,7.88.05,25.95-8.17,30.03-6.89,3.42-14.65-.11-15.46-7.97-1.06-27.91,1.47-58.66.04-86.45-1.15-22.38-12.28-40.44-34.47-46.76,0,0-45.72-15.98-69.19,27.37V57h-53v12.22h18.88l-.24,196.79h-18.66v12.22h71.88v-12.22h-18.88v-84.45c.8-24.91,15.96-47.26,43.48-43.35,19.91,2.83,25.29,19.56,26.09,37.24,1.1,24.5-1.99,53.11.04,77.21,1.83,21.83,19.53,32.57,40.39,29.95,25.16-3.17,28.31-27.95,28.21-48.87h-10.93Z"/>
+        <path d="M336.12,163.75l46.09,117.54h9.67c13.97-35.14,26.92-77,40.47-112.1,3.5-9.08,8.12-21.85,15.8-28.08,4.17-3.38,9.94-5.17,14.91-6.98v-11.33h-63.14v11.33c5.64.9,12.2,1.73,16.64,5.68,8,7.12,4.2,19.77,1.64,28.64-5.86,20.29-13.93,40.47-20.22,60.66l-35.13-94.1h14.78v-12.2h-63.16v12.2h18.08l-34.08,92.88-28.88-92.88h18.16v-12.2h-69.31v12.2h13.89l48.45,146.29h9.71l45.63-117.54Z"/>
+        <polygon points="529.65 122.89 476.66 122.89 476.66 135.11 494.88 135.11 494.91 266.01 476.66 266.01 476.66 278.23 548.1 278.23 548.1 266.01 529.65 266.01 529.65 122.89"/>
+        <ellipse cx="512.33" cy="84.12" rx="23.96" ry="23.73"/>
+      </g>
+    </svg>
+  </span>
+
+  <span class="rule"></span>
+  <span class="name empty" id="fname">No document open</span>
+  <span class="pill count" id="editCount" hidden></span>
+  <span class="pill" id="fit" hidden></span>
+  <span class="spacer"></span>
+  <button id="revert" disabled>Revert all</button>
+  <button id="open">Open…</button>
+  <button id="save" class="primary" disabled>Save</button>
+</div>
+
+<div id="stage">
+  <iframe id="frame" title="Document preview"></iframe>
+</div>
+
+<div id="drop">
+  <div class="motif" aria-hidden="true"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
+  <div class="inner">
+    <h1>Change the <span class="accent">words</span>,<br>nothing else.</h1>
+    <p class="meta">Drop a Switch HTML document here, or choose one below.</p>
+    <ul>
+      <li>It appears exactly as it will print.</li>
+      <li>Click any text and type. Formatting, fonts, logo and layout stay untouched.</li>
+      <li>Press ⌘S and it saves back to the same file.</li>
+    </ul>
+    <button id="open2" class="on-light">Choose a file…</button>
+    <p class="note" id="capability"></p>
+  </div>
+</div>
+
+<div id="panel">
+  <h2 id="panelTitle">Layout</h2>
+  <ul id="panelList"></ul>
+</div>
+
+<div id="toast"></div>
+
+<script type="module">
+import { scanDocument, instrument, applyEdits } from './src/patch-engine.js';
+
+/* ------------------------------------------------------------------- state */
+
+let handle = null;         // FileSystemFileHandle, when we can save in place
+let scan = null;           // output of scanDocument()
+let fileName = '';
+const edits = new Map();   // run index -> new text
+const nodeToRun = new WeakMap();
+const snapshots = new Map(); // element id -> original innerHTML, for recovery
+
+const $ = (id) => document.getElementById(id);
+const frame = $('frame');
+
+const CAN_SAVE_IN_PLACE = 'showOpenFilePicker' in window;
+const PLAINTEXT_OK = (() => {
+  const d = document.createElement('div');
+  d.setAttribute('contenteditable', 'plaintext-only');
+  return d.contentEditable === 'plaintext-only';
+})();
+
+const cap = $('capability');
+if (CAN_SAVE_IN_PLACE) {
+  cap.className = 'note ok';
+  cap.innerHTML = '<strong>Works in Chrome and Edge only.</strong> This browser can '
+    + 'save changes straight back to the original file. Safari and Firefox cannot write '
+    + 'to local files at all, so avoid using them here.';
+} else {
+  cap.className = 'note bad';
+  cap.innerHTML = '<strong>This browser can’t save your changes.</strong> Only Chrome '
+    + 'and Edge can write back to a local file — Safari and Firefox do not support it. '
+    + 'You can still open and edit a document, but Save will only offer a downloaded copy, '
+    + 'leaving your original untouched. Please switch to Chrome or Edge.';
+}
+
+/* ------------------------------------------------------------------- toast */
+
+let toastTimer;
+function toast(msg, bad = false) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.toggle('bad', bad);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), bad ? 5000 : 2200);
+}
+
+/* -------------------------------------------------------------- open a file */
+
+$('open').onclick = $('open2').onclick = openFile;
+
+async function openFile() {
+  if (CAN_SAVE_IN_PLACE) {
+    try {
+      const [h] = await window.showOpenFilePicker({
+        types: [{ description: 'HTML document', accept: { 'text/html': ['.html', '.htm'] } }],
+      });
+      await load(await h.getFile(), h);
+    } catch (err) {
+      if (err.name !== 'AbortError') toast(err.message, true);
+    }
+  } else {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.html,.htm';
+    input.onchange = () => input.files[0] && load(input.files[0], null);
+    input.click();
+  }
+}
+
+const drop = $('drop');
+for (const ev of ['dragenter', 'dragover']) {
+  document.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
+}
+document.addEventListener('dragleave', (e) => {
+  if (e.relatedTarget === null) drop.classList.remove('over');
+});
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  const item = e.dataTransfer.items?.[0];
+  if (!item) return;
+  try {
+    // Chrome hands over a real file handle from a drop, which is what lets us
+    // save back to the exact file the user dragged in.
+    const h = item.getAsFileSystemHandle ? await item.getAsFileSystemHandle() : null;
+    if (h && h.kind === 'file') return load(await h.getFile(), h);
+  } catch { /* fall through to a read-only File */ }
+  const f = e.dataTransfer.files?.[0];
+  if (f) load(f, null);
+});
+
+async function load(file, h) {
+  if (edits.size && !confirm('You have unsaved edits. Open a different document anyway?')) return;
+
+  const text = await file.text();
+  scan = scanDocument(text);
+  handle = h;
+  fileName = file.name;
+  edits.clear();
+  snapshots.clear();
+
+  $('fname').textContent = fileName;
+  $('fname').classList.remove('empty');
+  drop.classList.add('hidden');
+
+  frame.srcdoc = instrument(scan);
+  // wire() runs on the load event below.
+}
+
+/* --------------------------------------------- correlate source <-> preview */
+
+frame.addEventListener('load', () => {
+  if (!scan) return;
+  const doc = frame.contentDocument;
+  if (!doc || !doc.body) return;
+  wire(doc);
+});
+
+let runsByElement = new Map();
+
+/*
+ * Make one element editable, but only if the rendered preview agrees with the
+ * source exactly. Any disagreement means the browser's parser did something our
+ * scanner did not model, so we leave the element read-only rather than risk
+ * writing to the wrong offsets. Returns the number of text nodes wired.
+ */
+function wireElement(el, { snapshot = true } = {}) {
+  const id = Number(el.getAttribute('data-hep'));
+  const runs = runsByElement.get(id) || [];
+  const nodes = textNodesOf(el);
+
+  if (nodes.length !== runs.length || nodes.some((n, i) => n.data !== runs[i].text)) {
+    el.removeAttribute('contenteditable');
+    return 0;
+  }
+
+  nodes.forEach((n, i) => nodeToRun.set(n, runs[i]));
+  if (snapshot) snapshots.set(id, el.innerHTML);
+  el.setAttribute('contenteditable', PLAINTEXT_OK ? 'plaintext-only' : 'true');
+  el.spellcheck = true;
+  return nodes.length;
+}
+
+function wire(doc) {
+  runsByElement = new Map();
+  for (const r of scan.editable) {
+    if (!runsByElement.has(r.elementId)) runsByElement.set(r.elementId, []);
+    runsByElement.get(r.elementId).push(r);
+  }
+
+  let matched = 0;
+  const skipped = [];
+  for (const el of doc.querySelectorAll('[data-hep]')) {
+    const n = wireElement(el);
+    if (n) matched += n;
+    else skipped.push({ tag: el.tagName.toLowerCase(), id: el.getAttribute('data-hep') });
+  }
+
+  measureMM(doc);
+  doc.addEventListener('beforeinput', guardInput, true);
+  doc.addEventListener('input', onInput, true);
+  /*
+   * Documents can bind their own keyboard shortcuts on window — the Switch
+   * presentation template advances a slide on Space, ArrowRight and PageDown.
+   * Those handlers must not fire while the caret is in text, or typing a space
+   * jumps to the next slide. We stop the event before it reaches them, but never
+   * call preventDefault, so the browser still inserts the character.
+   */
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    doc.addEventListener(type, (e) => {
+      if (e.target?.closest?.('[contenteditable]')) e.stopPropagation();
+    }, true);
+  }
+
+  doc.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl+S from inside the preview should save the document.
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  }, true);
+
+  refreshLayout({ full: true });
+  reportReadiness(matched, skipped);
+}
+
+function textNodesOf(el) {
+  return [...el.childNodes].filter((n) => n.nodeType === 3 && n.data.trim() !== '');
+}
+
+function reportReadiness(matched, skipped) {
+  if (skipped.length === 0) {
+    toast(`${matched} editable text blocks ready`);
+    return;
+  }
+  // Not an error. The usual cause is text the document's own script writes at
+  // runtime — a slide counter, a page number — which has no fixed counterpart in
+  // the source and so can never be safely written back.
+  const n = skipped.length;
+  toast(`${matched} text blocks ready · ${n} block${n > 1 ? 's' : ''} left read-only `
+    + `(text the document generates itself, such as a slide counter)`);
+  console.info('Left read-only because the preview does not match the source:', skipped);
+}
+
+/* ------------------------------------------------------------ edit guarding */
+
+const SAFE_INPUT = new Set([
+  'insertText', 'insertCompositionText', 'insertReplacementText', 'insertFromPaste',
+  'deleteContentBackward', 'deleteContentForward',
+  'deleteWordBackward', 'deleteWordForward',
+  'deleteByCut', 'historyUndo', 'historyRedo',
+]);
+
+function guardInput(e) {
+  if (!SAFE_INPUT.has(e.inputType)) {
+    e.preventDefault();
+    toast('Only text can be changed in this document.', true);
+    return;
+  }
+  // Every affected range must sit inside one text node we know how to write back.
+  const ranges = e.getTargetRanges ? e.getTargetRanges() : [];
+  for (const r of ranges) {
+    if (r.startContainer !== r.endContainer || !nodeToRun.has(r.startContainer)) {
+      e.preventDefault();
+      toast('That edit would change the document structure, so it was blocked.', true);
+      return;
+    }
+  }
+}
+
+function onInput(e) {
+  const el = e.target.closest?.('[data-hep]') || e.target.parentElement?.closest('[data-hep]');
+  if (!el) return;
+  const id = Number(el.getAttribute('data-hep'));
+
+  // Integrity net: if the element's text nodes are no longer the ones we
+  // mapped, an edit slipped past the guard. Restore from snapshot rather than
+  // carry a document we can no longer write back safely.
+  const nodes = textNodesOf(el);
+  if (nodes.some((n) => !nodeToRun.has(n))) {
+    restore(el, id);
+    toast('That change was undone because it altered the document structure.', true);
+    return;
+  }
+
+  for (const n of nodes) {
+    const run = nodeToRun.get(n);
+    if (n.data === run.text) edits.delete(run.index);
+    else edits.set(run.index, n.data);
+  }
+
+  refreshEditCount();
+  scheduleLayout();
+}
+
+/*
+ * Put an element back the way it was rendered, then re-wire it AND every
+ * editable element inside it. Replacing innerHTML destroys the nested
+ * contenteditable elements and their text-node mappings, so re-wiring only the
+ * direct children would silently leave inline spans like <strong> read-only.
+ */
+function restore(el, id) {
+  const html = snapshots.get(id);
+  if (html === undefined) return;
+
+  // Drop pending edits for this element and everything beneath it.
+  const stale = new Set([id, ...[...el.querySelectorAll('[data-hep]')]
+    .map((d) => Number(d.getAttribute('data-hep')))]);
+  for (const r of scan.editable) if (stale.has(r.elementId)) edits.delete(r.index);
+
+  el.innerHTML = html;
+
+  // The snapshot predates the nested elements being wired, so re-wire from it
+  // without overwriting their own (still valid) snapshots.
+  wireElement(el, { snapshot: false });
+  for (const d of el.querySelectorAll('[data-hep]')) wireElement(d, { snapshot: false });
+
+  refreshEditCount();
+  scheduleLayout();
+}
+
+/* --------------------------------------------------------- layout / overflow */
+
+// Pixels per millimetre in the preview, measured once so headroom can be
+// reported in the units the document is actually designed in.
+let MM = 96 / 25.4;
+function measureMM(doc) {
+  const probe = doc.createElement('div');
+  probe.style.cssText = 'position:absolute;width:100mm;height:0;visibility:hidden';
+  doc.body.append(probe);
+  const w = probe.getBoundingClientRect().width;
+  probe.remove();
+  if (w > 0) MM = w / 100;
+}
+
+let layoutTimer;
+function scheduleLayout() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(refreshLayout, 140);
+}
+
+/*
+ * Both Switch templates use fixed-size cards and never auto-flow content, so
+ * lengthening text silently clips it in the PDF instead of pushing it onward.
+ * We re-run the same measurement each template's own script uses and reuse its
+ * .has-overflow class, so the red warning the design system already draws
+ * appears live. generate-pdf.py will therefore agree with what's on screen.
+ */
+
+// A4 documents: measure the .page-body content box.
+function measurePage(page) {
+  const target = page.querySelector('.page-body') || page;
+  const spill = target.scrollHeight - target.clientHeight;
+  if (spill > 1) return { spill };
+
+  // Headroom needs real geometry: with overflow:hidden, scrollHeight is clamped
+  // to the box, so it can never tell us how much room is left.
+  const box = target.getBoundingClientRect();
+  const kids = [...target.children];
+  if (!kids.length || !box.height) return { spill: 0, mm: null };
+  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - box.top;
+  return { spill: 0, mm: (box.height - used) / MM };
+}
+
+// 16:9 slides: the deck checks both axes on the .slide itself, and ignores
+// .bleed elements, which deliberately extend past the slide edge.
+function measureSlide(slide) {
+  const spill = Math.max(
+    slide.scrollHeight - slide.clientHeight,
+    slide.scrollWidth - slide.clientWidth,
+  );
+  if (spill > 1) return { spill };
+  const body = slide.querySelector('.slide-body');
+  if (!body) return { spill: 0, mm: null };
+  const box = body.getBoundingClientRect();
+  const kids = [...body.children].filter((k) => !k.classList.contains('bleed'));
+  if (!kids.length || !box.height) return { spill: 0, mm: null };
+  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - box.top;
+  return { spill: 0, mm: (box.height - used) / MM };
+}
+
+// Hidden slides report zero size, so a full sweep needs every slide visible.
+// That relayout is far too disruptive to run on each keystroke — it would move
+// the caret — so live checks cover only the slide being edited, and the full
+// sweep runs on load and again before saving.
+function withAllVisible(doc, fn) {
+  const wasScroll = doc.body.classList.contains('scroll-mode');
+  doc.body.classList.add('scroll-mode');
+  const bleeds = [...doc.querySelectorAll('.bleed')];
+  const shown = bleeds.map((el) => el.style.display);
+  bleeds.forEach((el) => { el.style.display = 'none'; });
+  try { return fn(); } finally {
+    bleeds.forEach((el, i) => { el.style.display = shown[i]; });
+    if (!wasScroll) doc.body.classList.remove('scroll-mode');
+  }
+}
+
+function cards(doc) {
+  const slides = [...doc.querySelectorAll('.slide')];
+  if (slides.length) {
+    return { kind: 'slide', noun: 'slide', abbr: 's', els: slides, measure: measureSlide };
+  }
+  const pages = [...doc.querySelectorAll('.page')];
+  if (pages.length) {
+    return { kind: 'page', noun: 'page', abbr: 'p', els: pages, measure: measurePage };
+  }
+  return null;
+}
+
+/*
+ * Measure every card. `full` forces the all-visible sweep needed for slides;
+ * without it, hidden slides are skipped and left with whatever status they had.
+ */
+function sweep(doc, { full = false } = {}) {
+  const c = cards(doc);
+  if (!c) return null;
+
+  const run = () => {
+    const over = [];
+    let tightest = { n: 0, mm: Infinity };
+    c.els.forEach((el, i) => {
+      const visible = el.offsetParent !== null || el.getClientRects().length > 0;
+      if (!visible && !full) return;
+      const { spill, mm } = c.measure(el);
+      el.classList.toggle('has-overflow', spill > 1);
+      if (spill > 1) over.push({ n: i + 1, px: spill, el });
+      else if (mm != null && mm < tightest.mm) tightest = { n: i + 1, mm };
+    });
+    return { over, tightest, checked: full ? c.els.length : undefined };
+  };
+
+  const result = (c.kind === 'slide' && full) ? withAllVisible(doc, run) : run();
+  return { ...result, ...c };
+}
+
+function refreshLayout({ full = false } = {}) {
+  const doc = frame.contentDocument;
+  if (!doc || !doc.body) return;
+  const fit = $('fit');
+  const panel = $('panel');
+
+  const r = sweep(doc, { full });
+  if (!r) { fit.hidden = true; panel.classList.remove('show'); return; }
+
+  const { over, tightest, els, noun, abbr, kind } = r;
+  const total = els.length;
+
+  const count = (n) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+  fit.hidden = false;
+  if (over.length) {
+    fit.textContent = `${count(over.length)} overflowing`;
+    fit.className = 'pill bad';
+  } else if (tightest.n) {
+    const scope = (kind === 'slide' && !full) ? `${noun} ${tightest.n}` : `tightest is ${abbr}${tightest.n}`;
+    let text = `${scope}, ${Math.max(0, tightest.mm).toFixed(0)}mm spare`;
+    if (full || kind === 'page') {
+      text = `${count(total)} ${total === 1 ? 'fits' : 'fit'} · ${text}`;
+    }
+    fit.textContent = text;
+    fit.className = tightest.mm < 8 ? 'pill warn' : 'pill ok';
+  } else {
+    fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`;
+    fit.className = 'pill ok';
+  }
+
+  const list = $('panelList');
+  list.innerHTML = '';
+  if (over.length) {
+    $('panelTitle').textContent = `Text no longer fits — ${over.length > 1 ? 'these' : 'this'} `
+      + `${noun}${over.length > 1 ? 's' : ''} will be clipped in the PDF`;
+    for (const o of over) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="who">${noun[0].toUpperCase()}${noun.slice(1)} ${o.n}</span>`
+        + `<span class="what">overflowing by ${Math.round(o.px)}px — shorten the text`
+        + ` or split the ${noun}</span>`;
+      const a = document.createElement('a');
+      a.textContent = 'Show me';
+      a.onclick = () => o.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      li.append(a);
+      list.append(li);
+    }
+    panel.classList.add('show');
+  } else {
+    panel.classList.remove('show');
+  }
+  refreshSaveState();
+}
+
+// Authoritative pre-save check: sweeps every card, including hidden slides.
+function overflowing() {
+  const doc = frame.contentDocument;
+  if (!doc || !doc.body) return 0;
+  const r = sweep(doc, { full: true });
+  return r ? r.over.length : 0;
+}
+
+/* ------------------------------------------------------------------- saving */
+
+function refreshEditCount() {
+  const c = $('editCount');
+  c.hidden = edits.size === 0;
+  c.textContent = `${edits.size} edit${edits.size === 1 ? '' : 's'}`;
+  c.className = 'pill count';
+  $('revert').disabled = edits.size === 0;
+  refreshSaveState();
+}
+
+function refreshSaveState() {
+  $('save').disabled = !scan || edits.size === 0;
+  $('save').textContent = handle || !scan ? 'Save' : 'Download copy';
+}
+
+$('revert').onclick = () => {
+  if (!confirm(`Discard all ${edits.size} edit(s) and reload the original text?`)) return;
+  edits.clear();
+  frame.srcdoc = instrument(scan);
+  refreshEditCount();
+};
+
+$('save').onclick = save;
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+});
+
+async function save() {
+  if (!scan || edits.size === 0) return;
+
+  const bad = overflowing();
+  if (bad && !confirm(
+    `${bad} page(s) currently overflow and will be clipped when the PDF is generated.\n\nSave anyway?`
+  )) return;
+
+  let html, changed;
+  try {
+    ({ html, changed } = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text }))));
+  } catch (err) {
+    toast(`Not saved — ${err.message}`, true);
+    return;
+  }
+
+  if (!handle) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`Downloaded an edited copy (${changed} block(s) changed)`);
+    return;
+  }
+
+  try {
+    if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted'
+      && await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+      toast('Permission to write the file was declined.', true);
+      return;
+    }
+    const w = await handle.createWritable();
+    await w.write(html);
+    await w.close();
+  } catch (err) {
+    toast(`Not saved — ${err.message}`, true);
+    return;
+  }
+
+  // The saved file is the new baseline, so rescan against it.
+  scan = scanDocument(html);
+  edits.clear();
+  frame.srcdoc = instrument(scan);
+  refreshEditCount();
+  toast(`Saved ${fileName} — ${changed} text block(s) changed`);
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (edits.size) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/*
+ * Test hook. The native file picker can't be driven from a test, so this lets a
+ * harness load a document and inspect the correlation between source and
+ * preview. Read-only inspection plus the same load() the UI uses.
+ */
+window.__hep = {
+  load,
+  state: () => ({
+    fileName,
+    canSaveInPlace: CAN_SAVE_IN_PLACE,
+    plaintextOnly: PLAINTEXT_OK,
+    editableRuns: scan ? scan.editable.length : 0,
+    mappedNodes: scan
+      ? [...frame.contentDocument.querySelectorAll('[data-hep][contenteditable]')]
+          .reduce((n, el) => n + textNodesOf(el).length, 0)
+      : 0,
+    editableElements: scan
+      ? frame.contentDocument.querySelectorAll('[data-hep][contenteditable]').length : 0,
+    unverifiedElements: scan
+      ? frame.contentDocument.querySelectorAll('[data-hep]:not([contenteditable])').length : 0,
+    edits: edits.size,
+    overflowing: overflowing(),
+    pages: frame.contentDocument ? frame.contentDocument.querySelectorAll('.page').length : 0,
+  }),
+  // Simulate typing into the nth editable text node, exercising the real
+  // input path (including the guard and the integrity check).
+  type: (n, text) => {
+    const doc = frame.contentDocument;
+    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      for (const node of textNodesOf(el)) {
+        if (n-- === 0) {
+          node.data = text;
+          el.dispatchEvent(new doc.defaultView.InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+  build: () => applyEdits(scan, [...edits].map(([index, text]) => ({ index, text }))),
+};
+</script>
+</body>
+</html>

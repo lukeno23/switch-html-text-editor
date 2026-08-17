@@ -1,0 +1,10 @@
+{
+  "name": "html-text-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Edit the text of a self-contained HTML document in its own live preview, saving back in place without touching a single byte of formatting.",
+  "scripts": {
+    "test": "node --test test/patch-engine.test.mjs"
+  }
+}
