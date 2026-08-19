@@ -4,6 +4,22 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### The selection actions could be clipped off the window edge
+*Fixed 19 Aug 2026.* The floating actions are centred on the selection via
+`translate(-50%)`, which was fine with one button. Adding the two delete actions
+made the bar ~470px wide, so selecting near the left edge pushed **Comment** off
+screen entirely. `positionOver()` now clamps the bar within the window.
+
+### The empty state could hide its own button below the fold
+*Fixed 19 Aug 2026.* `#drop` centred with `place-items: center` and
+`overflow: hidden`. Once the copy grew to four bullets plus the Claude handover,
+a 820×600 window put the content at 736px in a 548px box — with **Choose a file…**
+and the browser notice unreachable and unscrollable.
+
+Now centred with flex plus `margin: auto`, which centres when there is room and
+scrolls when there isn't, and a `max-height: 780px` rule tightens the type. Both
+verified reachable at 820×600.
+
 ### Commenting was impossible on any document without page cards
 *Found and fixed 19 Aug 2026, by testing six documents from three different
 design systems.*
@@ -133,6 +149,16 @@ Re-anchoring it to the replacement text would need a similarity match that could
 guess wrong, so it is deliberately left to the user to remove or redo.
 
 ## Won't fix (by design)
+
+### Deleting a block on a fixed-page template leaves the space empty
+Each `.page` is a rigid 210×297mm card and content never reflows between pages —
+that is the template's central design decision, and the rule `generate-pdf.py`
+enforces. So deleting a paragraph on page 4 leaves a gap on page 4; nothing moves
+up from page 5, ever. The deletions panel says this outright and points at the only
+thing that can close the gap, which is asking Claude to re-flow the pages.
+
+Flowing documents, which have no page cards, reflow normally — so this is a
+property of the template, not a limitation of the editor.
 
 ### Headroom is not measured on cover, statement or divider slides
 Those slides have no `.slide-body`; they compose content to fill the whole

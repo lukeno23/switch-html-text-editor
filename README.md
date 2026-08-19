@@ -64,6 +64,22 @@ surrounding context and the element they sit in, so they survive edits elsewhere
 If the quoted text itself changes, the comment is kept and flagged rather than
 silently dropped.
 
+## Deleting a paragraph or a section
+
+Select any text and the actions offer **Delete paragraph** and, where it holds
+more than that one block, **Delete section** — labelled with what it contains, so
+it is never a blind delete. Deletions are pending until you save: the block is
+hidden, listed in the panel, and **Restore** puts it back.
+
+The engine removes exactly the element's own bytes and the line break before it,
+nothing else. Anything without an explicit closing tag is refused rather than
+guessed at, table cells can't be deleted individually (the row is the unit), and
+pages and slides are protected because deleting one changes pagination.
+
+**On fixed-page templates nothing moves up to fill the gap** — each page is a
+rigid card that never reflows, so the space stays empty and the panel says so.
+Flowing documents reflow normally.
+
 ## Overflow warnings
 
 Both Switch templates use fixed-size cards and **never auto-flow content** — so
@@ -159,13 +175,14 @@ scope, is in [SNAGS.md](SNAGS.md).
 npm test
 ```
 
-27 tests covering the entity codec, the scanner (script/style interiors,
+37 tests covering the entity codec, the scanner (script/style interiors,
 quoted-attribute edge cases, comments, SVG, whitespace), instrumentation, edit
 application, overlap rejection, the review block (round-trip, replacement rather
 than stacking, `-->` escaping, unparseable blocks, composition with edits), and
-three round-trip tests against a real production document.
+block deletion (exact byte range, refusal without a closing tag, nesting,
+superseding edits), and four round-trip tests against a real production document.
 
-Those three skip unless you point them at one — client documents are never
+Those four skip unless you point them at one — client documents are never
 committed:
 
 ```bash
@@ -179,5 +196,5 @@ python3 -m http.server 8765
 ```
 
 `window.__hep` exposes `load()`, `state()`, `type()`, `comment()`, `comments()`,
-`setZoom()` and `build()` for driving the source↔preview correlation from the
-console.
+`deleteAt()`, `deletions()`, `restoreAll()`, `setZoom()` and `build()` for driving
+the source↔preview correlation from the console.

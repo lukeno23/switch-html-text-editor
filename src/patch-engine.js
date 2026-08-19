@@ -153,7 +153,7 @@ export function scanDocument(src) {
   const root = {
     id: 0, tag: '#document', parentId: null,
     openTagStart: -1, openTagEnd: -1, selfClosing: false,
-    inHead: false, inSvg: false, textRuns: [],
+    inHead: false, inSvg: false, closeTagStart: null, closeTagEnd: null, textRuns: [],
   };
   elements.push(root);
 
@@ -221,6 +221,14 @@ export function scanDocument(src) {
       // Unwind to the matching open tag if we have one; ignore strays.
       for (let d = stack.length - 1; d >= 1; d--) {
         if (stack[d].tag === tag) {
+          /*
+           * Only the element this tag actually closes gets an end offset.
+           * Anything popped above it was closed implicitly, which this scanner
+           * does not model — so it has no trustworthy end and is deliberately
+           * left undeletable. See elementRange().
+           */
+          stack[d].closeTagStart = lt;
+          stack[d].closeTagEnd = gt + 1;
           stack.length = d;
           break;
         }
@@ -240,6 +248,8 @@ export function scanDocument(src) {
       selfClosing,
       inHead: parent.inHead || tag === 'head',
       inSvg: parent.inSvg || tag === 'svg',
+      closeTagStart: null,
+      closeTagEnd: null,
       textRuns: [],
     };
     elements.push(el);
@@ -297,18 +307,86 @@ export function instrument(scan, attr = 'data-hep') {
   return out;
 }
 
+/* ------------------------------------------------------- deleting an element */
+
+/*
+ * The byte range to remove in order to delete an element outright, or null when
+ * that cannot be done safely.
+ *
+ * Requires an explicitly recorded closing tag: this scanner does not model
+ * implicit closing, so an unclosed <li> or <p> has no trustworthy end and is
+ * refused rather than guessed at.
+ *
+ * The range also swallows the newline and indentation immediately before the
+ * open tag, so removing a block closes the gap instead of leaving a blank line.
+ */
+export function elementRange(scan, elementId) {
+  const el = scan.elements[elementId];
+  if (!el || el.openTagStart < 0 || el.closeTagEnd == null) return null;
+
+  const src = scan.source;
+  let start = el.openTagStart;
+  let p = start;
+  while (p > 0 && (src[p - 1] === ' ' || src[p - 1] === '\t')) p--;
+  if (p > 0 && src[p - 1] === '\n') start = p - 1;
+
+  return { start, end: el.closeTagEnd };
+}
+
+// Everything outside the text runs: tags, attributes, comments, doctype, the
+// interiors of <script> and <style>. The thing that must never change.
+export function markupOnly(scan) {
+  let m = '';
+  let cur = 0;
+  for (const r of scan.runs) {
+    m += scan.source.slice(cur, r.start);
+    cur = r.end;
+  }
+  return m + scan.source.slice(cur);
+}
+
+// Editable runs that fall entirely inside a byte range.
+export function runsInside(scan, range) {
+  return scan.editable.filter((r) => r.start >= range.start && r.end <= range.end);
+}
+
 /*
  * Apply edits to the original source.
  *
  * edits: [{ index, text }] where `index` is a run index from scan.runs and
  * `text` is the new DECODED text (what the user sees and types).
  *
+ * deletions: element ids to remove outright, markup and all. This is the second
+ * deliberate exception to "only edited text runs are written" — bounded to whole
+ * elements the user explicitly chose, and refused entirely where the element has
+ * no recorded closing tag.
+ *
  * Runs whose text is unchanged are dropped, so an untouched document is
- * returned byte-for-byte identical. Overlapping edits are rejected rather than
- * silently resolved.
+ * returned byte-for-byte identical. Overlapping operations are rejected rather
+ * than silently resolved.
  */
-export function applyEdits(scan, edits) {
+export function applyEdits(scan, edits, deletions = []) {
   const { source, runs } = scan;
+
+  // Deletion ranges come first: they supersede any edit inside them.
+  const ranges = [];
+  for (const id of deletions) {
+    const r = elementRange(scan, id);
+    if (!r) throw new Error(`applyEdits: element ${id} has no recorded end and cannot be deleted`);
+    ranges.push(r);
+  }
+  // Widest-first at each start, so a nested range is recognised as covered.
+  ranges.sort((a, b) => a.start - b.start || b.end - a.end);
+  const cuts = [];
+  for (const r of ranges) {
+    const last = cuts[cuts.length - 1];
+    if (last && r.start < last.end) {
+      if (r.end > last.end) throw new Error('applyEdits: deletion ranges partially overlap');
+      continue; // fully inside a range already being removed
+    }
+    cuts.push(r);
+  }
+  const isCut = (run) => cuts.some((r) => run.start >= r.start && run.end <= r.end);
 
   const real = [];
   for (const e of edits) {
@@ -325,30 +403,31 @@ export function applyEdits(scan, edits) {
      *
      * The ENCODED comparison then catches the ordinary case.
      */
+    if (isCut(run)) continue; // the deletion supersedes this edit
     if (e.text === run.text) continue;
     const encoded = encodeText(e.text);
     if (encoded === run.raw) continue;
-    real.push({ run, encoded });
+    real.push({ start: run.start, end: run.end, text: encoded });
   }
 
-  if (real.length === 0) return { html: source, changed: 0 };
+  const ops = [...real, ...cuts.map((r) => ({ start: r.start, end: r.end, text: '' }))]
+    .sort((a, b) => a.start - b.start);
 
-  real.sort((a, b) => a.run.start - b.run.start);
-  for (let k = 1; k < real.length; k++) {
-    if (real[k].run.start < real[k - 1].run.end) {
-      throw new Error('applyEdits: overlapping edits');
-    }
+  for (let k = 1; k < ops.length; k++) {
+    if (ops[k].start < ops[k - 1].end) throw new Error('applyEdits: overlapping edits');
   }
+
+  if (ops.length === 0) return { html: source, changed: 0, deleted: 0 };
 
   let out = '';
   let cursor = 0;
-  for (const { run, encoded } of real) {
-    out += source.slice(cursor, run.start) + encoded;
-    cursor = run.end;
+  for (const op of ops) {
+    out += source.slice(cursor, op.start) + op.text;
+    cursor = op.end;
   }
   out += source.slice(cursor);
 
-  return { html: out, changed: real.length };
+  return { html: out, changed: real.length, deleted: cuts.length };
 }
 
 /* ------------------------------------------------------------- review block */

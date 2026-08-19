@@ -62,6 +62,13 @@ whole point of the design.
    there is a test for exactly that, on a real document. Do not widen this
    exception; if something else needs persisting, it goes in this block.
 
+7. **Deleting a block is the second bounded exception.** `applyEdits` accepts
+   element ids to remove outright, markup and all. It is bounded three ways: the
+   element must have an explicitly recorded closing tag (see below), the range is
+   exactly `[openTagStart, closeTagEnd)` plus the newline and indent before it,
+   and nothing else in the file is touched. There is a test asserting the output
+   equals the source with precisely that span cut out.
+
 ## How source and preview are correlated
 
 The hard problem is knowing which rendered text node maps to which source bytes,
@@ -120,6 +127,40 @@ covers everything editing can't: restructuring, tone, claims to check.
   working state. `dirty()` covers edits *and* comment changes, so reopening a
   file that already has comments is correctly not dirty.
 
+## Deleting blocks
+
+The scanner records `closeTagStart`/`closeTagEnd` when the tag stack unwinds, and
+**only for the element the closing tag actually closes**. Anything popped above it
+was closed implicitly — which this scanner does not model — so it gets `null` and
+`elementRange()` refuses it. That is why an unclosed `<li>` cannot be deleted: the
+end is a guess, and guessing here corrupts files.
+
+Containers carry no `data-hep`, because only elements with editable text are
+instrumented. `sourceIdFor()` therefore climbs the DOM and the scanned tree in
+lockstep from a known-mapped descendant, **checking tag names agree at every
+step**. Divergence means the parser did something the scanner didn't model, so the
+element is simply not offered. Same principle as invariant 3: derive, then verify.
+
+Other rules worth keeping:
+
+- `<td>`/`<th>` are deliberately not deletable — removing one cell breaks its
+  row's column count. `<tr>` is the unit instead.
+- `.page`, `.slide`, `.page-body`, `.wrap`, `main` and `body` are protected, as is
+  anything containing a `.page`/`.slide`. Deleting a page changes pagination,
+  which is a rebuild, not a text edit.
+- Deletions are **pending until save**: the element is hidden in the render copy
+  (`display:none` on a copy that never reaches disk) rather than removed. Undo is
+  therefore free — the nodes and their run mapping are still intact — and the
+  integrity net never sees a mutated DOM.
+- A deletion supersedes pending edits and comments inside it. Both are dropped at
+  queue time so the counts stay honest, and `applyEdits` skips any that remain
+  rather than throwing on the overlap.
+- Nested deletions collapse to the outer range; partially overlapping ones throw.
+- **On fixed-page templates nothing reflows into the gap.** Each `.page` is a
+  rigid card, so a deletion leaves white space and nothing moves up from the next
+  page. The panel says so, because otherwise it reads as a bug. Flowing documents
+  reflow normally, which is where the feature earns most of its value.
+
 ## Editing safety
 
 `contenteditable="plaintext-only"` sits on the *parent element* (no DOM change),
@@ -173,8 +214,8 @@ template already scales itself.
 npm test
 ```
 
-29 tests. Three of them round-trip a real production document and skip unless
-you point them at one — client documents are never committed:
+37 tests. Four of them round-trip a real production document and skip unless you
+point them at one — client documents are never committed:
 
 ```bash
 HEP_FIXTURE="/path/to/a/document.html" npm test
@@ -185,10 +226,18 @@ the saved file, assert the concatenated **markup** (everything outside text runs
 is byte-identical, assert only the intended runs differ, and assert reversing
 those edits reproduces the original exactly.
 
+Run it against **several documents from different design systems**, not just one.
+Every serious bug so far was found by the first document outside the pair the
+engine was built against: the `&middot;` no-op rewrite, accented characters
+locking elements, and commenting being impossible without page cards. Assertions
+must not assume Switch structure either — assert on what the document actually
+carries (`if (src.includes(marker))`), or the suite fails on its own assumptions.
+
 For UI work, serve the folder (`.claude/launch.json` defines the `editor` config
 on port 8765) — ES modules won't load from `file://`. `window.__hep` exposes
-`load()`, `state()`, `type()`, `comment()`, `comments()`, `setZoom()` and
-`build()` so the source↔preview correlation can be driven from the console.
+`load()`, `state()`, `type()`, `comment()`, `comments()`, `deleteAt()`,
+`deletions()`, `restoreAll()`, `setZoom()` and `build()` so the source↔preview
+correlation can be driven from the console.
 
 Two traps when testing from the console: `load()` starts with a `confirm()` when
 there are unsaved changes, and an automated context auto-dismisses it so `load()`
@@ -217,8 +266,9 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 
 ## House rules
 
-- **This repo is public.** No client or brand names in files, commit messages, or
-  test fixture paths. `.gitignore` blocks `*.html` except `index.html`, plus PDFs
+- **This repo is public.** No client or brand names in files, commit messages,
+  test fixture paths, or test data strings — that last one has caught me twice.
+  `grep -rniE "<clientnames>" $(git ls-files)` before every commit. `.gitignore` blocks `*.html` except `index.html`, plus PDFs
   and Office files.
 - The tool is referenced from `switch-documents` SKILL.md step 5, the packaged
   `.skill` bundle, the Team Guide and the announcement email. **Changing the

@@ -393,3 +393,142 @@ test('real document: review block leaves every run and all markup alone', { skip
   assert.equal(blobs(out), blobs(src), 'embedded font count changed');
   assert.deepEqual(readReview(out), comments);
 });
+
+/* ------------------------------------------------------ deleting an element */
+
+import { elementRange, markupOnly, runsInside } from '../src/patch-engine.js';
+
+const DOC3 = [
+  '<!DOCTYPE html><html><head><title>T</title></head><body>',
+  '<div class="card">',
+  '  <p>first paragraph</p>',
+  '  <p>second paragraph</p>',
+  '  <p>third paragraph</p>',
+  '</div>',
+  '</body></html>',
+].join('\n');
+
+const findEl = (scan, tag, text) => scan.elements.find(
+  (el) => el.tag === tag && el.textRuns.some((r) => r.text.includes(text)),
+);
+
+test('deleting a block removes exactly its bytes and closes the gap', () => {
+  const scan = scanDocument(DOC3);
+  const p = findEl(scan, 'p', 'second');
+  const range = elementRange(scan, p.id);
+
+  const { html, changed, deleted } = applyEdits(scan, [], [p.id]);
+  assert.equal(changed, 0);
+  assert.equal(deleted, 1);
+
+  // The output is precisely the source with that span cut out — nothing else.
+  assert.equal(html, DOC3.slice(0, range.start) + DOC3.slice(range.end));
+  assert.ok(!html.includes('second paragraph'));
+  assert.ok(html.includes('first paragraph') && html.includes('third paragraph'));
+  // No blank line left behind.
+  assert.ok(!/\n\s*\n/.test(html), 'a blank line was left where the block had been');
+});
+
+test('deleting a container takes its children with it', () => {
+  const scan = scanDocument(DOC3);
+  const div = scan.elements.find((el) => el.tag === 'div');
+  const range = elementRange(scan, div.id);
+  assert.equal(runsInside(scan, range).length, 3, 'expected three paragraphs inside');
+
+  const { html, deleted } = applyEdits(scan, [], [div.id]);
+  assert.equal(deleted, 1);
+  for (const t of ['first paragraph', 'second paragraph', 'third paragraph', 'class="card"']) {
+    assert.ok(!html.includes(t), `${t} survived`);
+  }
+  assert.ok(html.includes('<body>') && html.includes('</body>'), 'structure damaged');
+});
+
+test('an element with no recorded closing tag is refused, not guessed at', () => {
+  // <li> without </li> — the scanner does not model implicit closing.
+  const scan = scanDocument('<ul>\n  <li>a\n  <li>b\n</ul>');
+  const li = scan.elements.find((el) => el.tag === 'li');
+  assert.equal(li.closeTagEnd, null);
+  assert.equal(elementRange(scan, li.id), null);
+  assert.throws(() => applyEdits(scan, [], [li.id]), /no recorded end/);
+});
+
+test('a deletion supersedes edits inside it rather than throwing', () => {
+  const scan = scanDocument(DOC3);
+  const p = findEl(scan, 'p', 'second');
+  const inside = p.textRuns.find((r) => !r.wsOnly);
+  const outside = findEl(scan, 'p', 'third').textRuns.find((r) => !r.wsOnly);
+
+  const { html, changed, deleted } = applyEdits(
+    scan,
+    [{ index: inside.index, text: 'rewritten' }, { index: outside.index, text: 'third, edited' }],
+    [p.id],
+  );
+  assert.equal(deleted, 1);
+  assert.equal(changed, 1, 'only the edit outside the deletion should count');
+  assert.ok(!html.includes('rewritten'), 'an edit inside a deleted block was written');
+  assert.ok(html.includes('third, edited'));
+});
+
+test('a nested deletion is absorbed by its container, not double-cut', () => {
+  const scan = scanDocument(DOC3);
+  const div = scan.elements.find((el) => el.tag === 'div');
+  const p = findEl(scan, 'p', 'second');
+  const both = applyEdits(scan, [], [div.id, p.id]);
+  const justDiv = applyEdits(scan, [], [div.id]);
+  assert.equal(both.html, justDiv.html);
+  assert.equal(both.deleted, 1);
+});
+
+test('deleting several siblings removes each and keeps the rest intact', () => {
+  const scan = scanDocument(DOC3);
+  const first = findEl(scan, 'p', 'first');
+  const third = findEl(scan, 'p', 'third');
+  const { html, deleted } = applyEdits(scan, [], [third.id, first.id]); // deliberately unsorted
+  assert.equal(deleted, 2);
+  assert.ok(html.includes('second paragraph'));
+  assert.ok(!html.includes('first paragraph') && !html.includes('third paragraph'));
+});
+
+test('deletions compose with the review block', () => {
+  const scan = scanDocument(DOC3);
+  const p = findEl(scan, 'p', 'second');
+  const out = applyEdits(scan, [], [p.id]);
+  const withReview = writeReview(out.html, [{ id: 1, quote: 'first paragraph', note: 'check' }]);
+  assert.equal(readReview(withReview).length, 1);
+  assert.equal(writeReview(withReview, []), out.html);
+});
+
+test('real document: deleting a paragraph leaves all other markup untouched', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
+  const src = readFileSync(REAL_FILE, 'utf8');
+  const scan = scanDocument(src);
+
+  // Any block the scanner recorded an end for that holds real text. Not every
+  // document has long paragraphs — slide decks are all short headings.
+  const BLOCKS = new Set(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'td']);
+  const target = scan.elements.find((el) => BLOCKS.has(el.tag)
+    && el.closeTagEnd != null
+    && el.textRuns.some((r) => !r.wsOnly && r.text.trim().length > 8));
+  assert.ok(target, 'expected a closed block with text');
+
+  const range = elementRange(scan, target.id);
+  const gone = runsInside(scan, range);
+  const { html, deleted } = applyEdits(scan, [], [target.id]);
+  assert.equal(deleted, 1);
+
+  // Byte-exact: the source with one span removed.
+  assert.equal(html, src.slice(0, range.start) + src.slice(range.end));
+
+  const after = scanDocument(html);
+  // Markup outside the removed span is identical.
+  const cutMarkup = markupOnly(scan).length - markupOnly(after).length;
+  assert.ok(cutMarkup > 0, 'markup should have shrunk');
+  assert.equal(after.editable.length, scan.editable.length - gone.length,
+    'exactly the runs inside the deleted block should be gone');
+
+  // Everything the document carries outside text runs still survives.
+  const blobs = (t) => (t.match(/data:font\/woff2/g) || []).length;
+  assert.equal(blobs(html), blobs(src));
+  for (const marker of ['===FONTS-START===', '===FONTS-END===']) {
+    if (src.includes(marker)) assert.ok(html.includes(marker), `${marker} lost`);
+  }
+});

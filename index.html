@@ -163,20 +163,26 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 
 /* Light panel against the dark chrome — the light/dark alternation the brand
    uses between covers and content. */
+/*
+ * Centred with flex + margin:auto rather than place-items, because that pattern
+ * still centres when there is room but lets the content scroll instead of being
+ * clipped when there isn't. With place-items:center and overflow:hidden, a short
+ * window put the Choose-a-file button below the fold and unreachable.
+ */
 #drop {
   position: absolute;
   inset: 52px 0 0 0;
   z-index: 2;
   background: var(--misty-mint);
   color: var(--body-text);
-  display: grid;
-  place-items: center;
+  display: flex;
   padding: 40px;
-  overflow: hidden;
+  overflow: auto;
 }
 #drop.hidden { display: none; }
 
 #drop .inner {
+  margin: auto;
   max-width: 620px;
   width: 100%;
   position: relative;
@@ -232,6 +238,18 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   font-weight: 700;
 }
 
+/* The Claude handover, in DM Sans so it reads as instruction rather than the
+   Source Serif cover-meta voice. */
+#drop .handoff {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--body-text);
+  margin: 0 0 24px;
+  max-width: 500px;
+  padding-left: 13px;
+  border-left: 3px solid var(--bean-green);
+}
+
 /* Callout device: 3px bean-green left border. Alert-red when the browser can't
    save at all, since that changes what the user should do. */
 #drop .note {
@@ -269,6 +287,18 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 #drop .motif .br { background: var(--green-unknown); border-radius: 0 0 50% 50%; }
 
 @media (max-height: 620px), (max-width: 900px) { #drop .motif { display: none; } }
+
+/* Short windows: tighten the empty state so it still fits without scrolling. */
+@media (max-height: 780px) {
+  #drop { padding: 24px; }
+  #drop .inner { padding: 20px 24px; }
+  #drop h1 { font-size: 30px; margin-bottom: 12px; }
+  #drop .meta { font-size: 15px; margin-bottom: 18px; }
+  #drop ul { margin-bottom: 18px; }
+  #drop ul li { margin-bottom: 6px; font-size: 13px; }
+  #drop .handoff { margin-bottom: 18px; font-size: 13px; }
+  #drop .note { margin-top: 18px; }
+}
 
 /* -------------------------------------------------------------------- panel */
 
@@ -398,22 +428,51 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 
 /* ------------------------------------------------------------------ comments */
 
-/* Floating "Comment" affordance that appears over a selection in the preview. */
-#commentBtn {
+/* Floating actions that appear over a selection in the preview. */
+#selActions {
   position: absolute;
   z-index: 6;
   display: none;
+  gap: 6px;
   transform: translate(-50%, -100%);
-  background: var(--possible-purple);
-  color: var(--green-unknown);
-  border-color: var(--possible-purple);
+  padding-bottom: 2px;
+}
+#selActions.show { display: flex; }
+#selActions button {
   font-weight: 700;
   font-size: 12px;
   padding: 5px 11px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
-#commentBtn.show { display: block; }
+#commentBtn {
+  background: var(--possible-purple);
+  color: var(--green-unknown);
+  border-color: var(--possible-purple);
+}
 #commentBtn:hover { filter: brightness(1.05); background: var(--possible-purple); }
+
+/* Deleting is destructive, so it wears the alert colour rather than an accent. */
+#selActions .del {
+  background: var(--green-unknown);
+  color: var(--misty-mint);
+  border-color: var(--alert);
+}
+#selActions .del:hover { background: var(--alert); border-color: var(--alert); color: var(--white); }
+
+/* Pending deletions, listed alongside comments. */
+#panel li.deletion {
+  border-left-color: var(--alert);
+  background: rgba(192, 57, 43, 0.1);
+}
+#panel li.deletion .what s { color: rgba(237, 244, 237, .5); }
+#panel .caveat {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(237, 244, 237, .6);
+  border-left: 3px solid var(--caution);
+  padding: 5px 0 5px 10px;
+}
 
 /* Shown in the button's place when a selection can't be commented on, so the
    absence of the button is never unexplained. Informational, not clickable. */
@@ -568,7 +627,11 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   <iframe id="frame" title="Document preview"></iframe>
 </div>
 
-<button id="commentBtn">Comment</button>
+<div id="selActions">
+  <button id="commentBtn">Comment</button>
+  <button id="deleteBlockBtn" class="del" hidden></button>
+  <button id="deleteSectionBtn" class="del" hidden></button>
+</div>
 <div id="selectHint" role="status"></div>
 
 <div id="composer">
@@ -584,13 +647,19 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 <div id="drop">
   <div class="motif" aria-hidden="true"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
   <div class="inner">
-    <h1>Change the <span class="accent">words</span>,<br>nothing else.</h1>
-    <p class="meta">Drop a Switch HTML document here, or choose one below.</p>
+    <h1>Edit the words.<br>Flag the rest for <span class="accent">Claude</span>.</h1>
+    <p class="meta">Drop in any self-contained HTML document (a Switch white paper or
+      deck, a client report, anything built as a single file).</p>
     <ul>
-      <li>It appears exactly as it will print.</li>
-      <li>Click any text and type. Formatting, fonts, logo and layout stay untouched.</li>
-      <li>Press ⌘S and it saves back to the same file.</li>
+      <li>It appears exactly as it will in the PDF.</li>
+      <li>Click any text and type, or delete a paragraph or section outright. Fonts,
+        colours, layout and logos cannot be changed.</li>
+      <li>Select anything you'd rather Claude handled, and leave a comment on it.</li>
+      <li>Press ⌘S. Your edits and your comments save into the same file.</li>
     </ul>
+    <p class="handoff">Ask Claude to analyse the file and to address your comments (if
+      needed). It reads them, makes the changes, confirms your manual changes, and
+      re-exports the PDF.</p>
     <button id="open2" class="on-light">Choose a file…</button>
     <p class="note" id="capability"></p>
   </div>
@@ -605,6 +674,14 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
     </div>
     <ul id="commentList"></ul>
   </div>
+  <div class="section" id="deleteSection" hidden>
+    <div class="bar">
+      <h2 id="deleteTitle">To be deleted when you save</h2>
+      <button id="restoreAll">Restore all</button>
+    </div>
+    <ul id="deleteList"></ul>
+    <p class="caveat" id="deleteCaveat" hidden></p>
+  </div>
   <div class="section" id="layoutSection" hidden>
     <h2 id="panelTitle">Layout</h2>
     <ul id="panelList"></ul>
@@ -614,7 +691,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 <div id="toast"></div>
 
 <script type="module">
-import { scanDocument, instrument, applyEdits, readReview, writeReview } from './src/patch-engine.js';
+import { scanDocument, instrument, applyEdits, readReview, writeReview, elementRange, runsInside } from './src/patch-engine.js';
 
 /* ------------------------------------------------------------------- state */
 
@@ -631,6 +708,7 @@ let loadedReviewJSON = '[]';  // what was in the file, for dirty tracking
 let pendingSelection = null;  // details of the current preview selection
 let titleRun = null;       // the <title> run, editable via the toolbar
 let zoomFactor = 1;
+let deletions = [];        // blocks pending removal, applied on save
 
 const $ = (id) => document.getElementById(id);
 const frame = $('frame');
@@ -725,6 +803,7 @@ async function load(file, h) {
   zoomFactor = 1;
 
   // Comments already in the file come back as they were left.
+  deletions = [];
   comments = readReview(text).map((c) => ({ ...c }));
   nextCommentId = comments.reduce((n, c) => Math.max(n, Number(c.id) || 0), 0) + 1;
   loadedReviewJSON = JSON.stringify(persistable(comments));
@@ -1120,7 +1199,8 @@ function renderLayoutSection(r) {
 
 // The panel is visible when either of its sections has something to say.
 function syncPanel() {
-  const any = !$('layoutSection').hidden || !$('commentSection').hidden;
+  const any = !$('layoutSection').hidden || !$('commentSection').hidden
+    || !$('deleteSection').hidden;
   $('panel').classList.toggle('show', any);
 }
 
@@ -1131,6 +1211,236 @@ function overflowing() {
   const r = sweep(doc);
   return r ? r.over.length : 0;
 }
+
+/* ---------------------------------------------------------------- deleting */
+
+/*
+ * Blocks that can be removed whole. <td>/<th> are deliberately absent: removing
+ * one cell breaks its row's column count, so a table row is the unit instead.
+ */
+const DELETABLE_BLOCKS = new Set(
+  ['p', 'li', 'tr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'figcaption', 'dt', 'dd', 'pre'],
+);
+const DELETABLE_CONTAINERS = new Set(['div', 'section', 'article', 'aside', 'figure', 'ul', 'ol', 'table', 'dl']);
+
+// Containers that are structure rather than content. Deleting a page or slide
+// changes pagination, which is a rebuild, not a text edit.
+const NEVER_DELETE = ['.page', '.slide', '.page-body', '.slide-body', '.wrap', 'main', 'body', 'html'];
+
+function isProtected(el) {
+  return NEVER_DELETE.some((sel) => el.matches(sel))
+    || el.querySelector('.page, .slide') !== null;
+}
+
+/*
+ * Map a rendered element to its element id in the scanned source.
+ *
+ * Only elements holding editable text carry a data-hep attribute, so a container
+ * has none. We therefore climb the DOM and the scanned tree in lockstep from a
+ * known-mapped descendant, checking the tag names agree at every step. If they
+ * ever diverge — the parser did something the scanner didn't model — we return
+ * null and the element simply isn't offered for deletion.
+ */
+function sourceIdFor(domTarget, domHost) {
+  if (!domHost || !domTarget.contains(domHost)) return null;
+  let id = Number(domHost.getAttribute('data-hep'));
+  if (!scan.elements[id] || scan.elements[id].tag !== domHost.tagName.toLowerCase()) return null;
+
+  let dom = domHost;
+  while (dom !== domTarget) {
+    const el = scan.elements[id];
+    if (!el || el.parentId == null) return null;
+    id = el.parentId;
+    dom = dom.parentElement;
+    if (!dom || !scan.elements[id] || scan.elements[id].tag !== dom.tagName.toLowerCase()) return null;
+  }
+  return id;
+}
+
+const BLOCK_NOUNS = {
+  p: 'paragraph', li: 'list item', tr: 'table row', blockquote: 'quote',
+  figcaption: 'caption', dt: 'term', dd: 'definition', pre: 'code block',
+  h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading',
+  div: 'section', section: 'section', article: 'section', aside: 'section',
+  figure: 'figure', ul: 'list', ol: 'list', table: 'table', dl: 'list',
+};
+
+// Plain-English summary of what a container holds, so a delete is never blind.
+function describeContents(el) {
+  const counts = [
+    ['paragraph', el.querySelectorAll('p').length],
+    ['list item', el.querySelectorAll('li').length],
+    ['table', el.querySelectorAll('table').length],
+    ['heading', el.querySelectorAll('h1,h2,h3,h4,h5,h6').length],
+  ].filter(([, n]) => n > 0)
+    .map(([noun, n]) => `${n} ${noun}${n === 1 ? '' : 's'}`);
+  return counts.join(', ');
+}
+
+/*
+ * The block and, where it differs usefully, the enclosing section that a
+ * selection could delete. Returns { block, section } of DOM elements.
+ */
+function deletionTargets(node) {
+  const startEl = node.nodeType === 3 ? node.parentElement : node;
+  if (!startEl) return {};
+  const host = startEl.closest('[data-hep]');
+  if (!host) return {};
+
+  let block = null;
+  for (let e = startEl; e && e !== frame.contentDocument.body; e = e.parentElement) {
+    if (DELETABLE_BLOCKS.has(e.tagName.toLowerCase())) { block = e; break; }
+  }
+
+  let section = null;
+  const from = block || startEl;
+  for (let e = from.parentElement; e && e !== frame.contentDocument.body; e = e.parentElement) {
+    if (!DELETABLE_CONTAINERS.has(e.tagName.toLowerCase())) continue;
+    if (isProtected(e)) break;
+    // Only worth offering if it holds more than the block itself.
+    const blocks = e.querySelectorAll([...DELETABLE_BLOCKS].join(',')).length;
+    if (blocks >= 2) { section = e; break; }
+  }
+
+  const ok = (el) => el && !isProtected(el) && sourceIdFor(el, host) != null
+    && elementRange(scan, sourceIdFor(el, host)) != null;
+  return { block: ok(block) ? block : null, section: ok(section) ? section : null, host };
+}
+
+function offerDeletion(btn, el, host, isSection) {
+  if (!el) { btn.hidden = true; return; }
+  const tag = el.tagName.toLowerCase();
+  const noun = BLOCK_NOUNS[tag] || 'block';
+  const inside = isSection ? describeContents(el) : '';
+  btn.hidden = false;
+  btn.textContent = inside ? `Delete ${noun} (${inside})` : `Delete ${noun}`;
+  btn.onclick = () => queueDeletion(el, host, noun, inside);
+}
+
+function queueDeletion(el, host, noun, inside) {
+  const id = sourceIdFor(el, host);
+  if (id == null) { toast('That block could not be matched to the file, so it was not deleted.', true); return; }
+  const range = elementRange(scan, id);
+  if (!range) { toast('That block has no closing tag in the file, so it cannot be removed safely.', true); return; }
+  if (deletions.some((d) => d.id === id)) return;
+
+  // A deletion supersedes any pending edits and comments inside it, so drop them
+  // rather than leaving counts that no longer mean anything.
+  const runs = runsInside(scan, range);
+  let droppedEdits = 0;
+  for (const r of runs) if (edits.delete(r.index)) droppedEdits++;
+  const before = comments.length;
+  comments = comments.filter((c) => !(c.range && el.contains(c.range.startContainer)));
+  const droppedComments = before - comments.length;
+
+  const doc = frame.contentDocument;
+  const card = el.closest('.page, .slide');
+  deletions.push({
+    id,
+    noun,
+    inside,
+    el,
+    text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 90),
+    kind: card ? (card.classList.contains('slide') ? 'slide' : 'page') : 'section',
+    page: card ? [...doc.querySelectorAll(card.classList.contains('slide') ? '.slide' : '.page')].indexOf(card) + 1 : undefined,
+    where: card ? undefined : headingAbove(el),
+  });
+
+  el.dataset.hepDeleted = '1';
+  el.style.display = 'none';
+  hideCommentAffordances();
+
+  resolveComments(doc);
+  renderComments();
+  renderDeletions();
+  refreshEditCount();
+  refreshLayout();
+
+  const extra = [
+    droppedEdits ? `${droppedEdits} edit${droppedEdits === 1 ? '' : 's'}` : null,
+    droppedComments ? `${droppedComments} comment${droppedComments === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(' and ');
+  toast(extra
+    ? `Marked a ${noun} for deletion — ${extra} inside it discarded`
+    : `Marked a ${noun} for deletion. It goes when you save.`);
+}
+
+function restoreDeletion(d) {
+  d.el.style.display = '';
+  delete d.el.dataset.hepDeleted;
+  deletions = deletions.filter((x) => x !== d);
+  // The nodes were only hidden, never removed, so the mapping is still intact.
+  resolveComments(frame.contentDocument);
+  renderComments();
+  renderDeletions();
+  refreshEditCount();
+  refreshLayout();
+}
+
+function renderDeletions() {
+  const section = $('deleteSection');
+  const list = $('deleteList');
+  list.innerHTML = '';
+
+  if (deletions.length === 0) {
+    section.hidden = true;
+    $('deleteCaveat').hidden = true;
+    syncPanel();
+    refreshSaveState();
+    return;
+  }
+
+  $('deleteTitle').textContent = deletions.length === 1
+    ? 'To be deleted when you save — 1 block'
+    : `To be deleted when you save — ${deletions.length} blocks`;
+
+  for (const d of deletions) {
+    const li = document.createElement('li');
+    li.className = 'deletion';
+
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = commentWhere(d);
+
+    const what = document.createElement('span');
+    what.className = 'what';
+    const s2 = document.createElement('s');
+    s2.textContent = d.text || `(${d.noun})`;
+    what.append(document.createTextNode(`${d.noun}${d.inside ? ` — ${d.inside}` : ''}: `), s2);
+
+    const actions = document.createElement('span');
+    actions.className = 'actions';
+    const undo = document.createElement('a');
+    undo.textContent = 'Restore';
+    undo.onclick = () => restoreDeletion(d);
+    actions.append(undo);
+
+    li.append(who, what, actions);
+    list.append(li);
+  }
+
+  /*
+   * On fixed-page templates nothing moves up to fill the gap — each page is a
+   * rigid card and content never reflows between pages. Saying so here stops the
+   * result being a surprise, and points at the only thing that can fix it.
+   */
+  const anyPaged = deletions.some((d) => d.kind === 'page' || d.kind === 'slide');
+  const caveat = $('deleteCaveat');
+  caveat.hidden = !anyPaged;
+  if (anyPaged) {
+    caveat.textContent = 'These pages are a fixed size and never reflow, so the space left behind '
+      + 'stays empty — nothing moves up from the next page. Leave a comment asking Claude to re-flow '
+      + 'the pages if you want the gap closed.';
+  }
+
+  section.hidden = false;
+  syncPanel();
+  refreshSaveState();
+}
+
+$('restoreAll').onclick = () => {
+  for (const d of [...deletions]) restoreDeletion(d);
+};
 
 /* ----------------------------------------------------------------- comments */
 
@@ -1150,7 +1460,7 @@ function reviewDirty() {
   return JSON.stringify(persistable(comments)) !== loadedReviewJSON;
 }
 function dirty() {
-  return edits.size > 0 || reviewDirty();
+  return edits.size > 0 || reviewDirty() || deletions.length > 0;
 }
 
 // Highlighting uses the CSS Custom Highlight API, which paints arbitrary ranges
@@ -1253,7 +1563,7 @@ function onSelectionChange() {
   if (why) {
     // Drop the previous selection too, so a stale one can never be committed.
     pendingSelection = null;
-    $('commentBtn').classList.remove('show');
+    $('selActions').classList.remove('show');
     showSelectHint(why, r.getBoundingClientRect());
     return;
   }
@@ -1277,7 +1587,12 @@ function onSelectionChange() {
     rect: r.getBoundingClientRect(),
   };
 
-  if (!$('composer').classList.contains('show')) positionOver($('commentBtn'), pendingSelection.rect, true);
+  if (!$('composer').classList.contains('show')) {
+    const { block, section, host } = deletionTargets(r.startContainer);
+    offerDeletion($('deleteBlockBtn'), block, host, false);
+    offerDeletion($('deleteSectionBtn'), section, host, true);
+    positionOver($('selActions'), pendingSelection.rect, true);
+  }
 }
 
 const BLOCKISH = 'p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, figcaption, dt, dd';
@@ -1337,20 +1652,33 @@ function showSelectHint({ head, body }, rect) {
   positionOver(el, rect, true);
 }
 
-// Place a parent-document element above a rect measured inside the iframe.
+/*
+ * Place a parent-document element above a rect measured inside the iframe.
+ *
+ * The element is centred on the selection via translate(-50%), so it has to be
+ * clamped to the window or a selection near either edge pushes half of it out of
+ * view — which clipped the Comment button once the delete actions were added.
+ */
 function positionOver(el, rect, show) {
   const f = frame.getBoundingClientRect();
-  el.style.left = `${f.left + rect.left + rect.width / 2}px`;
-  el.style.top = `${Math.max(f.top + 34, f.top + rect.top - 8)}px`;
   el.classList.toggle('show', !!show);
+  if (!show) return;
+
+  const MARGIN = 10;
+  const half = el.offsetWidth / 2;
+  const wanted = f.left + rect.left + rect.width / 2;
+  const min = MARGIN + half;
+  const max = window.innerWidth - MARGIN - half;
+  el.style.left = `${max < min ? window.innerWidth / 2 : Math.min(max, Math.max(min, wanted))}px`;
+  el.style.top = `${Math.max(f.top + 34, f.top + rect.top - 8)}px`;
 }
 
 function hideCommentAffordances() {
-  $('commentBtn').classList.remove('show');
+  $('selActions').classList.remove('show');
   $('selectHint').classList.remove('show');
 }
 
-$('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+$('selActions').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
 $('commentBtn').onclick = () => {
   if (!pendingSelection) return;
   hideCommentAffordances();
@@ -1585,12 +1913,16 @@ function refreshSaveState() {
 }
 
 $('revert').onclick = () => {
-  if (!confirm(`Discard all ${edits.size} text edit(s) and reload the original wording?`
+  const bits = [`${edits.size} text edit(s)`];
+  if (deletions.length) bits.push(`${deletions.length} pending deletion(s)`);
+  if (!confirm(`Discard ${bits.join(' and ')} and reload the original?`
     + (comments.length ? '\n\nComments are kept — use "Clear all" in the panel to remove those.' : ''))) return;
   edits.clear();
+  deletions = [];
   if (titleRun) $('docTitle').value = titleRun.text;
   frame.srcdoc = instrument(scan);
   refreshEditCount();
+  renderDeletions();
 };
 
 $('save').onclick = save;
@@ -1608,7 +1940,11 @@ async function save() {
 
   let html, changed;
   try {
-    ({ html, changed } = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text }))));
+    ({ html, changed } = applyEdits(
+      scan,
+      [...edits].map(([index, text]) => ({ index, text })),
+      deletions.map((d) => d.id),
+    ));
     // The review block goes in afterwards: it lives outside every text run, so
     // it cannot disturb the offsets applyEdits just used.
     html = writeReview(html, persistable(comments));
@@ -1623,7 +1959,7 @@ async function save() {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(a.href);
-    toast(`Downloaded a copy — ${savedSummary(changed)}`);
+    toast(`Downloaded a copy — ${savedSummary(changed, deletions.length)}`);
     return;
   }
 
@@ -1641,21 +1977,26 @@ async function save() {
     return;
   }
 
-  // The saved file is the new baseline, so rescan against it.
+  // The saved file is the new baseline, so rescan against it. The deleted blocks
+  // are gone from the source now, so the pending list starts empty again.
+  const removed = deletions.length;
   scan = scanDocument(html);
   edits.clear();
+  deletions = [];
   titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
   loadedReviewJSON = JSON.stringify(persistable(comments));
   frame.srcdoc = instrument(scan);
   refreshEditCount();
-  toast(`Saved ${fileName} — ${savedSummary(changed)}`);
+  renderDeletions();
+  toast(`Saved ${fileName} — ${savedSummary(changed, removed)}`);
 }
 
-function savedSummary(changed) {
+function savedSummary(changed, removed) {
   const parts = [];
   if (changed) parts.push(`${changed} text block${changed === 1 ? '' : 's'} changed`);
+  if (removed) parts.push(`${removed} block${removed === 1 ? '' : 's'} deleted`);
   if (comments.length) parts.push(`${comments.length} comment${comments.length === 1 ? '' : 's'} stored`);
-  else if (!changed) parts.push('comments cleared');
+  if (parts.length === 0) parts.push('comments cleared');
   return parts.join(', ');
 }
 
@@ -1686,6 +2027,7 @@ window.__hep = {
     edits: edits.size,
     comments: comments.length,
     commentsResolved: comments.filter((c) => c.resolved).length,
+    deletions: deletions.length,
     canHighlight: CAN_HIGHLIGHT,
     zoom: zoomFactor,
     docTitle: $('docTitle').value,
@@ -1737,6 +2079,26 @@ window.__hep = {
     return false;
   },
   comments: () => persistable(comments),
+  deletions: () => deletions.map((d) => ({ id: d.id, noun: d.noun, kind: d.kind, page: d.page, text: d.text })),
+  // Queue a deletion from the nth editable text node, exercising the real path.
+  deleteAt: (n, which = 'block') => {
+    const doc = frame.contentDocument;
+    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      if (el.offsetParent === null && el.getClientRects().length === 0) continue;
+      for (const node of textNodesOf(el)) {
+        if (n-- === 0) {
+          const t = deletionTargets(node);
+          const target = which === 'section' ? t.section : t.block;
+          if (!target) return false;
+          const noun = BLOCK_NOUNS[target.tagName.toLowerCase()] || 'block';
+          queueDeletion(target, t.host, noun, which === 'section' ? describeContents(target) : '');
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+  restoreAll: () => { $('restoreAll').click(); },
   setZoom: (z) => { zoomFactor = z; applyZoom(); refreshLayout(); },
 };
 </script>
