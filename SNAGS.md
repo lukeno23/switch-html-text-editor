@@ -206,6 +206,40 @@ kept, marked in the panel, and left unhighlighted. It is never silently dropped.
 Re-anchoring it to the replacement text would need a similarity match that could
 guess wrong, so it is deliberately left to the user to remove or redo.
 
+## Proposed upgrades
+
+Agreed shortlist from 19 Aug 2026, in priority order. Nothing started.
+
+**Build first.**
+
+1. **Find and replace across the document.** The recurring job is "we renamed the
+   product / the date changed / the client's name is wrong" — currently 30 manual
+   edits or a Claude round-trip. Maps onto the engine as many run edits through the
+   well-tested path; show every match before committing.
+2. **Let Claude write back into the review block.** The loop is one-way today: you
+   comment, Claude acts, the comment is deleted, and there is no record of what it
+   did. Marking each `addressed` with a note gives resolved threads on reopen, plus
+   a "Clear addressed" button. Mostly a `SKILL.md` change.
+3. **Show your own edits, and a change list before saving.** Highlighting edited
+   runs is nearly free — the Custom Highlight API is already wired — and a
+   before/after list plus pending deletions makes a careful save verifiable.
+
+**Worth a spike.**
+
+4. **Print to PDF from the editor.** The templates carry `@page` rules and
+   `-webkit-print-color-adjust: exact`, and `generate-pdf.py` drives the same
+   Chromium engine. If `frame.contentWindow.print()` matches its output, wording
+   changes stop needing Claude or the toolchain. Compare against real
+   `generate-pdf.py` output before promising anything.
+5. **`showDirectoryPicker()` for relative asset paths.** Fonts are already lent from
+   the editor's bundle; images can't be. A granted folder would make the preview
+   exact for any document. Costs a permission prompt and picking a folder two levels
+   above the document.
+
+**Smaller quality-of-life.** Page indicator and jump-to-page; ⌘K to comment; recent
+documents via stored file handles; collapsible panel sections, since the panel caps
+at 38% of the window and can hold three sections at once.
+
 ## Won't fix (by design)
 
 ### Deleting a block on a fixed-page template leaves the space empty

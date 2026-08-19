@@ -299,6 +299,23 @@ Push to `main`; GitHub Pages serves the root. `.nojekyll` stops Jekyll touching
 the JS. Pages takes a minute or two — poll until the build's `commit` matches
 `HEAD`, since `builds/latest` returns the previous build until the new one starts.
 
+## Picking this up again
+
+Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
+upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
+
+Two things that are true as of 19 Aug 2026 and easy to trip over:
+
+- **`switch-documents` SKILL.md is behind the editor.** It was rebuilt at kit v1.2
+  describing typing and commenting; the editor has since gained block and section
+  deletion, an editable `<title>`, zoom and brand-font substitution. Step 5 needs a
+  refresh, and whether v1.2 was ever uploaded to org settings was never confirmed.
+  Each release costs a five-file version bump plus an org upload, so bundle it with
+  the next real change rather than shipping on its own.
+- **Test breadth is what finds bugs here.** Every serious defect so far came from the
+  first document in an unfamiliar style, never from more tests on familiar ones. Ask
+  for a new file before calling a feature done.
+
 ## House rules
 
 - **This repo is public.** No client or brand names in files, commit messages,
