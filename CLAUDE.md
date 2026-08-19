@@ -104,6 +104,10 @@ rewrite its entity spelling; leaving it alone does not, which is invariant 2.
 Comments let the user flag text for Claude instead of fixing it themselves, which
 covers everything editing can't: restructuring, tone, claims to check.
 
+- **`findRange()` walks every text node under `<body>`.** It must not filter by
+  structure: requiring a `.page`/`.slide` ancestor meant comments on flowing
+  documents were written to the file and came back permanently stale. Scoring on
+  quote, context and element id is what makes anchoring accurate.
 - **Anchored by content, not offsets.** Each comment stores its quoted text, ~24
   characters of context either side, and the `data-hep` element id as a
   tiebreaker. `findRange()` scores candidates on those three and takes the best.
@@ -178,6 +182,15 @@ Document keybindings are contained by stopping `keydown`/`keypress`/`keyup`
 propagation while the caret is in editable text, without `preventDefault` so the
 character still inserts. The presentation template binds Space, ArrowRight and
 PageDown on `window`; without this, typing a space advances the slide.
+
+## Telling a page card from a `div.page`
+
+`.page` and `.slide` are ordinary class names. `looksLikeCards()` requires a
+`.page-body`/`.slide-body`, or several cards that clip overflow, before treating a
+document as paged — one real document uses `.page` for a content-height wrapper
+and got a meaningless "0mm spare" plus a pointless zoom control. Everything that
+labels a location (`onSelectionChange`, `queueDeletion`, the fit pill) goes through
+`cards()` so the whole UI agrees about whether the document has pages at all.
 
 ## Overflow checking
 

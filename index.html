@@ -1096,13 +1096,30 @@ function withAllVisible(doc, fn) {
   }
 }
 
+/*
+ * `.page` and `.slide` are common class names, so their presence alone doesn't
+ * mean fixed-size cards. One document uses `.page` for a rounded, content-height
+ * wrapper — which produced a meaningless "1 page fits · 0mm spare" and offered a
+ * zoom control that made no sense.
+ *
+ * A real Switch card carries a `.page-body` / `.slide-body` content box. Failing
+ * that, several cards that clip their overflow is good enough evidence. Anything
+ * else is treated as a flowing document: no overflow warnings, which is the safe
+ * way to be wrong.
+ */
+function looksLikeCards(doc, els, bodySelector) {
+  if (doc.querySelector(bodySelector)) return true;
+  if (els.length < 2) return false;
+  return getComputedStyle(els[0]).overflow === 'hidden';
+}
+
 function cards(doc) {
   const slides = [...doc.querySelectorAll('.slide')];
-  if (slides.length) {
+  if (slides.length && looksLikeCards(doc, slides, '.slide-body')) {
     return { kind: 'slide', noun: 'slide', abbr: 's', els: slides, measure: measureSlide };
   }
   const pages = [...doc.querySelectorAll('.page')];
-  if (pages.length) {
+  if (pages.length && looksLikeCards(doc, pages, '.page-body')) {
     return { kind: 'page', noun: 'page', abbr: 'p', els: pages, measure: measurePage };
   }
   return null;
@@ -1334,15 +1351,17 @@ function queueDeletion(el, host, noun, inside) {
   const droppedComments = before - comments.length;
 
   const doc = frame.contentDocument;
-  const card = el.closest('.page, .slide');
+  // Same card test as everywhere else, so labels agree across the whole UI.
+  const cardInfo = cards(doc);
+  const card = cardInfo ? el.closest(cardInfo.kind === 'slide' ? '.slide' : '.page') : null;
   deletions.push({
     id,
     noun,
     inside,
     el,
     text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 90),
-    kind: card ? (card.classList.contains('slide') ? 'slide' : 'page') : 'section',
-    page: card ? [...doc.querySelectorAll(card.classList.contains('slide') ? '.slide' : '.page')].indexOf(card) + 1 : undefined,
+    kind: card ? cardInfo.kind : 'section',
+    page: card ? cardInfo.els.indexOf(card) + 1 : undefined,
     where: card ? undefined : headingAbove(el),
   });
 
@@ -1484,7 +1503,13 @@ function findRange(doc, c) {
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   const candidates = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!n.parentElement?.closest('.page, .slide')) continue;
+    /*
+     * Every text node under <body> is a candidate. This used to require a
+     * `.page`/`.slide` ancestor, which meant no comment on a flowing document
+     * ever re-anchored: it was written to the file and came back permanently
+     * stale. Scoring on the quote, its context and the element id does the
+     * disambiguation — a structural filter was never what made it accurate.
+     */
     const host = n.parentElement?.closest('[data-hep]');
     const el = host ? Number(host.getAttribute('data-hep')) : undefined;
     let from = 0;
@@ -1551,7 +1576,15 @@ function onSelectionChange() {
    * the nearest heading above the selection instead. Requiring a .page/.slide
    * here used to make commenting silently impossible on any flowing document.
    */
-  const card = r.startContainer.parentElement?.closest('.page, .slide');
+  /*
+   * Use the same test as the overflow sweep, so a `.page` that is really just a
+   * content-height wrapper doesn't get labelled "Page 1". One source of truth for
+   * "does this document have cards" keeps the labels honest.
+   */
+  const cardInfo = cards(doc);
+  const card = cardInfo
+    ? r.startContainer.parentElement?.closest(cardInfo.kind === 'slide' ? '.slide' : '.page')
+    : null;
 
   /*
    * A comment is anchored by its quoted text, so the selection has to sit inside
@@ -1569,8 +1602,8 @@ function onSelectionChange() {
   }
   $('selectHint').classList.remove('show');
 
-  const kind = card ? (card.classList.contains('slide') ? 'slide' : 'page') : 'section';
-  const all = card ? [...doc.querySelectorAll(kind === 'slide' ? '.slide' : '.page')] : [];
+  const kind = card ? cardInfo.kind : 'section';
+  const all = card ? cardInfo.els : [];
   const data = r.startContainer.data;
   const host = r.startContainer.parentElement?.closest('[data-hep]');
   pendingSelection = {

@@ -4,6 +4,32 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### Comments never re-anchored on a document without page cards
+*Found and fixed 19 Aug 2026, by testing a form mockup and a diagram document.*
+
+`findRange()` skipped any text node without a `.page`/`.slide` ancestor, so on a
+flowing document **no comment ever resolved**. It was written to the file and came
+back permanently marked stale and unhighlighted. The creation path had been fixed
+earlier the same day; the resolution path had not, which is why it looked like it
+worked right up to the moment you reopened the file.
+
+The structural filter is gone. Scoring on the quoted text, its surrounding context
+and the element id does the disambiguation — the filter was never what made
+anchoring accurate. A side effect is that text inside inline SVG can now be
+commented on, which matters for diagram-heavy documents.
+
+### A `.page` class that wasn't a page card triggered page logic
+*Fixed 19 Aug 2026.* One document uses `.page` for a rounded, content-height
+wrapper. The editor read that as a fixed A4 card, reported "1 page fits · 0mm
+spare" — meaningless, since the element grows with its content — and offered a
+zoom control that did nothing useful.
+
+`looksLikeCards()` now requires a `.page-body`/`.slide-body` content box, or
+several cards that clip their overflow. Anything else is treated as a flowing
+document: no overflow warnings, which is the safe way to be wrong. The same test
+is used for comment and deletion labels, so nothing says "Page 1" about a document
+that has no pages.
+
 ### The selection actions could be clipped off the window edge
 *Fixed 19 Aug 2026.* The floating actions are centred on the selection via
 `translate(-50%)`, which was fine with one button. Adding the two delete actions
@@ -136,6 +162,22 @@ inside editable text. It never calls `preventDefault`, so the browser still
 inserts the character. Slide navigation still works when the caret is elsewhere.
 
 ## Open
+
+### Deletion is only offered for prose blocks
+`DELETABLE_BLOCKS` covers `p`, `li`, `tr`, headings, `blockquote` and friends. On a
+form mockup the text lives in `<label>` and `<span>` inside `div.field` wrappers,
+so nothing is offered for deletion — the meaningful unit there is the field
+wrapper, which needs its own considered design rather than a widened whitelist.
+Deletion is the riskiest feature in the tool; broadening what it will remove
+deserves a deliberate pass.
+
+### Text inside inline SVG cannot be edited, only commented on
+Diagram labels are real document text — one test document holds 118 of them.
+They can now be selected, commented on and highlighted, but not edited: SVG
+elements have no `contentEditable` property at all, so the browser will not make
+them an editing host. Verified directly. Editing them would need a different
+mechanism entirely (an overlay input writing back to the run), which is a feature
+rather than a fix.
 
 ### Comments on a deck need you to navigate to the slide first
 Hidden slides cannot be selected, so you can only comment on the slide you are
