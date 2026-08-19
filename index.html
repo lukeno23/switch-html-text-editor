@@ -1065,7 +1065,7 @@ function refreshLayout() {
 
   measureMM(doc); // re-measured because zoom changes the pixels-per-mm ratio
   const r = sweep(doc);
-  if (!r) { fit.hidden = true; renderLayoutSection(null); return; }
+  if (!r) { fit.hidden = true; fit.textContent = ''; renderLayoutSection(null); return; }
 
   const { over, tightest, els, noun, abbr } = r;
   const total = els.length;
@@ -1142,7 +1142,7 @@ function overflowing() {
  *
  * Only these fields reach the file. `range` and `resolved` are working state.
  */
-const PERSISTED = ['id', 'kind', 'page', 'el', 'quote', 'before', 'after', 'note'];
+const PERSISTED = ['id', 'kind', 'page', 'where', 'el', 'quote', 'before', 'after', 'note'];
 const persistable = (list) =>
   list.map((c) => Object.fromEntries(PERSISTED.filter((k) => c[k] !== undefined).map((k) => [k, c[k]])));
 
@@ -1233,8 +1233,15 @@ function onSelectionChange() {
 
   const r = sel.getRangeAt(0);
   const quote = sel.toString();
+  if (!quote.trim()) { pendingSelection = null; hideCommentAffordances(); return; }
+
+  /*
+   * Fixed-page templates give a comment a page or slide number. Documents that
+   * simply flow — most hand-built HTML — have neither, so the location comes from
+   * the nearest heading above the selection instead. Requiring a .page/.slide
+   * here used to make commenting silently impossible on any flowing document.
+   */
   const card = r.startContainer.parentElement?.closest('.page, .slide');
-  if (!card || !quote.trim()) { pendingSelection = null; hideCommentAffordances(); return; }
 
   /*
    * A comment is anchored by its quoted text, so the selection has to sit inside
@@ -1252,13 +1259,14 @@ function onSelectionChange() {
   }
   $('selectHint').classList.remove('show');
 
-  const kind = card.classList.contains('slide') ? 'slide' : 'page';
-  const all = [...doc.querySelectorAll(kind === 'slide' ? '.slide' : '.page')];
+  const kind = card ? (card.classList.contains('slide') ? 'slide' : 'page') : 'section';
+  const all = card ? [...doc.querySelectorAll(kind === 'slide' ? '.slide' : '.page')] : [];
   const data = r.startContainer.data;
   const host = r.startContainer.parentElement?.closest('[data-hep]');
   pendingSelection = {
     kind,
-    page: all.indexOf(card) + 1,
+    page: card ? all.indexOf(card) + 1 : undefined,
+    where: card ? undefined : headingAbove(r.startContainer),
     // Element id narrows the search when the quote is short or repeated. Only a
     // hint: if Claude restructures the document it is ignored and the quoted
     // text plus surrounding context does the work.
@@ -1273,6 +1281,28 @@ function onSelectionChange() {
 }
 
 const BLOCKISH = 'p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, figcaption, dt, dd';
+const HEADINGS = 'h1, h2, h3, h4, h5, h6';
+
+/*
+ * Nearest heading at or above a node, in document order — the location label for
+ * documents with no page or slide numbers. Gives Claude something to navigate by.
+ */
+function headingAbove(node) {
+  const doc = node.ownerDocument;
+  const start = node.nodeType === 3 ? node.parentElement : node;
+  const own = start?.closest(HEADINGS);
+  if (own) return own.textContent.trim().slice(0, 80);
+
+  const all = [...doc.querySelectorAll(HEADINGS)];
+  let best = null;
+  for (const h of all) {
+    // DOCUMENT_POSITION_PRECEDING means the heading comes before our node.
+    if (start && (h.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING)) best = h;
+    else break;
+  }
+  return best ? best.textContent.trim().slice(0, 80) : undefined;
+}
+
 
 /*
  * Return null when the selection can carry a comment, otherwise a message
@@ -1345,18 +1375,26 @@ $('composerSave').onclick = () => {
   if (!pendingSelection) return;
   if (!note) { $('composerNote').focus(); return; }
 
-  const { kind, page, el, quote, before, after } = pendingSelection;
-  comments.push({ id: nextCommentId++, kind, page, el, quote, before, after, note });
-  comments.sort((a, b) => (a.page - b.page) || (a.id - b.id));
+  const { kind, page, where, el, quote, before, after } = pendingSelection;
+  comments.push({ id: nextCommentId++, kind, page, where, el, quote, before, after, note });
+  // Page order where there are pages; otherwise the order they were made.
+  comments.sort((a, b) => ((a.page ?? 0) - (b.page ?? 0)) || (a.id - b.id));
 
   closeComposer();
   const doc = frame.contentDocument;
   resolveComments(doc);
   renderComments();
-  toast(`Comment added on ${kind} ${page}`);
+  toast(`Comment added — ${commentWhere(comments[comments.length - 1])}`);
 };
 
 /* ---- the comments section of the panel ---- */
+
+// How a comment describes its own location, however the document is built.
+function commentWhere(c) {
+  if (c.kind === 'slide' && c.page) return `Slide ${c.page}`;
+  if (c.page) return `Page ${c.page}`;
+  return c.where || 'In the document';
+}
 
 function renderComments() {
   const section = $('commentSection');
@@ -1385,7 +1423,8 @@ function renderComments() {
 
     const who = document.createElement('span');
     who.className = 'who';
-    who.textContent = `${c.kind === 'slide' ? 'Slide' : 'Page'} ${c.page}`;
+    who.textContent = commentWhere(c);
+    who.title = commentWhere(c);
 
     const body = document.createElement('span');
     body.className = 'body';
@@ -1446,7 +1485,7 @@ $('copyBrief').onclick = async () => {
     `Review comments on ${fileName}:`,
     '',
     ...comments.flatMap((c, i) => [
-      `${i + 1}. ${c.kind === 'slide' ? 'Slide' : 'Page'} ${c.page} — "${c.quote}"`,
+      `${i + 1}. ${commentWhere(c)} — "${c.quote}"`,
       `   ${c.note}`,
       '',
     ]),

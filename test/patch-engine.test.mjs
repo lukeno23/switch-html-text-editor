@@ -223,10 +223,14 @@ test('real document: scan, no-op and surgical edit', { skip: !existsSync(REAL_FI
     assert.ok(!r.raw.includes('@font-face'), 'CSS leaked into a text run');
   }
 
-  // The build markers the Switch pipeline depends on must survive instrumentation.
+  // Instrumentation must be attribute-only whatever the document is, and any
+  // build markers the document happens to carry must survive it. Only documents
+  // produced by make-selfcontained.py have those markers, so assert on what this
+  // document actually contains rather than assuming a Switch template.
   const inst = instrument(scan);
-  assert.ok(inst.includes('===FONTS-START==='), 'FONTS-START marker lost');
-  assert.ok(inst.includes('===FONTS-END==='), 'FONTS-END marker lost');
+  for (const marker of ['===FONTS-START===', '===FONTS-END===']) {
+    if (src.includes(marker)) assert.ok(inst.includes(marker), `${marker} lost`);
+  }
   assert.equal(inst.replace(/ data-hep="\d+"/g, ''), src, 'instrumentation was not attribute-only');
 
   // Edit one run and prove the diff is exactly one contiguous region.
@@ -380,9 +384,12 @@ test('real document: review block leaves every run and all markup alone', { skip
   assert.equal(markup(scanDocument(writeReview(out, []))), markup(a));
   assert.equal(writeReview(out, []), src, 'clearing comments must restore the original exactly');
 
-  // The build markers and embedded fonts survive.
-  assert.ok(out.includes('===FONTS-START==='));
-  assert.ok(out.includes('===FONTS-END==='));
-  assert.equal((out.match(/data:font\/woff2/g) || []).length, 7);
+  // Whatever the document carries outside its text runs must come through
+  // untouched — build markers and embedded font blobs included, where present.
+  for (const marker of ['===FONTS-START===', '===FONTS-END===']) {
+    if (src.includes(marker)) assert.ok(out.includes(marker), `${marker} lost`);
+  }
+  const blobs = (s) => (s.match(/data:font\/woff2/g) || []).length;
+  assert.equal(blobs(out), blobs(src), 'embedded font count changed');
   assert.deepEqual(readReview(out), comments);
 });

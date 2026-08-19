@@ -4,6 +4,21 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### Commenting was impossible on any document without page cards
+*Found and fixed 19 Aug 2026, by testing six documents from three different
+design systems.*
+
+`onSelectionChange` looked up `.closest('.page, .slide')` to work out a page
+number, and bailed out when it found nothing. Documents that simply flow — most
+hand-built HTML — have neither, so the Comment button never appeared and there
+was no explanation. Editing worked perfectly on those documents throughout, which
+is why it went unnoticed.
+
+Page cards are now optional. Where they exist a comment still records `Page 3` or
+`Slide 7`; where they don't, it records the nearest heading above the selection
+(`kind: "section"`, `where: "..."`), which gives Claude something to navigate by.
+The panel, the toast and the copied brief all use whichever is available.
+
 ### A no-op save rewrote runs containing entities we don't re-emit
 *Found and fixed 19 Aug 2026, by testing a document outside the original two.*
 
@@ -137,5 +152,14 @@ counterpart in the source, so they can never be safely written back. The editor
 detects this and says so on load. You can still *comment* on them.
 
 ### Documents that aren't self-contained
-Files referencing external CSS, images or fonts by relative path will render
-without them. Run `make-selfcontained.py` first, as the skill already instructs.
+Files referencing CSS, images or fonts by relative path render without them,
+because the preview is built from the file's own bytes and has no folder to
+resolve against. Editing, commenting and saving are completely unaffected — only
+the preview's appearance is. For Switch templates, `make-selfcontained.py` fixes
+it, as the skill already instructs.
+
+**Open improvement:** the editor says nothing when this happens, so a document can
+render in fallback fonts with a broken logo and the user may not realise the
+preview is unfaithful. Both are detectable — failed `document.fonts` entries and
+images with `naturalWidth === 0` — so a one-line notice on load is cheap and would
+stop "it appears exactly as it will print" being quietly untrue.
