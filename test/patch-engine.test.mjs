@@ -215,7 +215,9 @@ test('real document: scan, no-op and surgical edit', { skip: !existsSync(REAL_FI
   assertNoOpIsByteIdentical(scan);
 
   // Sanity: the document has real prose, and the embedded fonts are untouched.
-  assert.ok(scan.editable.length > 200, `expected lots of editable runs, got ${scan.editable.length}`);
+  // Enough to prove the scanner engaged, without assuming a document length —
+  // a 13-slide deck has ~108 runs where a 22-page paper has ~371.
+  assert.ok(scan.editable.length > 40, `expected real prose, got ${scan.editable.length} runs`);
   for (const r of scan.runs) {
     assert.ok(!r.raw.includes('data:font/woff2'), 'a font blob leaked into a text run');
     assert.ok(!r.raw.includes('@font-face'), 'CSS leaked into a text run');
@@ -238,15 +240,50 @@ test('real document: scan, no-op and surgical edit', { skip: !existsSync(REAL_FI
   assert.equal(html.length, src.length - target.raw.length + replacement.length);
 });
 
-test('real document: every editable run round-trips through encode/decode', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
+test('real document: encoding is lossless in meaning for every editable run', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
   const src = readFileSync(REAL_FILE, 'utf8');
   const scan = scanDocument(src);
-  const broken = scan.editable.filter((r) => encodeText(r.text) !== r.raw);
+
+  /*
+   * The property that matters is that a round-trip preserves the TEXT, not the
+   * entity spelling. A source may use `&middot;`, which we decode to `·` and
+   * would re-emit as a literal `·` — same character, different bytes. Editing
+   * such a run therefore changes its entity spelling, which is allowed; leaving
+   * it alone must not, which is what the no-op test above proves.
+   */
+  const lossy = scan.editable.filter((r) => decodeEntities(encodeText(r.text)) !== r.text);
   assert.deepEqual(
-    broken.map((r) => ({ index: r.index, raw: r.raw.slice(0, 60) })),
+    lossy.map((r) => ({ index: r.index, raw: r.raw.slice(0, 60) })),
     [],
-    'these runs would be rewritten by an edit-and-revert cycle',
+    'these runs would come back as different text after an edit',
   );
+});
+
+test('an unchanged run is never rewritten, even when its entity spelling differs', () => {
+  // `&middot;` decodes to `·`, which encodeText emits literally. Submitting the
+  // decoded text unchanged must still be treated as a no-op.
+  const src = '<p>Footer &middot; Document name</p><p>plain</p>';
+  const scan = scanDocument(src);
+  const run = scan.editable.find((r) => r.text.includes('·'));
+  assert.notEqual(encodeText(run.text), run.raw, 'precondition: spelling differs');
+
+  const noop = applyEdits(scan, [{ index: run.index, text: run.text }]);
+  assert.equal(noop.changed, 0);
+  assert.equal(noop.html, src, 'an untouched entity run must not be rewritten');
+
+  // A genuine edit to that run is allowed to change the spelling, but only there.
+  const edited = applyEdits(scan, [{ index: run.index, text: 'Footer · Renamed document' }]);
+  assert.equal(edited.changed, 1);
+  assert.equal(edited.html, '<p>Footer · Renamed document</p><p>plain</p>');
+});
+
+test('invisible characters are written as entities, not bare literals', () => {
+  assert.equal(encodeText('a\u00a0b'), 'a&nbsp;b');
+  assert.equal(encodeText('a\u00adb'), 'a&shy;b');
+  assert.equal(encodeText('a\u2009b'), 'a&thinsp;b');
+  // Visible characters stay literal — re-encoding them would rewrite user text.
+  assert.equal(encodeText('a·b'), 'a·b');
+  assert.equal(encodeText('a—b'), 'a—b');
 });
 
 /* --------------------------------------------------------------- review block */

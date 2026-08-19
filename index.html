@@ -1513,10 +1513,14 @@ $('zoomIn').onclick = () => stepZoom(1);
 $('zoomOut').onclick = () => stepZoom(-1);
 $('zoomFit').onclick = () => {
   const doc = frame.contentDocument;
-  const card = doc?.querySelector('.page');
-  if (!card) return;
+  const cards = [...(doc?.querySelectorAll('.page') || [])];
+  if (!cards.length) return;
+
+  // Fit the WIDEST page, not the first. Documents can mix portrait with
+  // landscape pages (297mm wide), and sizing to a portrait page leaves the
+  // landscape ones overflowing sideways.
   doc.documentElement.style.zoom = '';
-  const natural = card.getBoundingClientRect().width;
+  const natural = Math.max(...cards.map((c) => c.getBoundingClientRect().width));
   doc.documentElement.style.zoom = String(zoomFactor);
   if (!natural) return;
   // Leave a little room so the page card isn't flush against the window edge.

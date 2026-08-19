@@ -27,9 +27,14 @@ whole point of the design.
    attributes, drop comments and endanger the 7 embedded base64 WOFF2 blobs and
    the `FONTS-START`/`FONTS-END` markers that `make-selfcontained.py` needs.
 
-2. **Untouched runs are never rewritten.** `applyEdits` drops any edit whose
-   encoded text equals the existing raw bytes, so a no-op save is byte-identical.
-   Don't "normalise" text on the way through.
+2. **Untouched runs are never rewritten.** `applyEdits` drops an edit when the
+   DECODED text is unchanged *or* when the encoded bytes match the raw bytes, and
+   both checks are load-bearing. `decodeEntities` knows far more entities than
+   `encodeText` re-emits — `&middot;` decodes to `·` and encodes back to a literal
+   `·` — so an encoded-only comparison concludes the run changed and rewrites
+   bytes nobody touched. That shipped briefly and a real document caught it: 30
+   footer runs would have been rewritten by a no-op save. Don't "normalise" text
+   on the way through, and don't remove either check.
 
 3. **Only render-verified nodes become editable.** `wireElement()` compares the
    rendered text node against the scanned source run and refuses the element if
@@ -76,6 +81,16 @@ given the browser's HTML parser does error recovery the scanner doesn't model.
 
 Why not wrap each text node in a span: it would make the span the first element
 child, breaking `:first-child` rules. Attributes are the only safe instrument.
+
+**Entity coverage decides editability, not just display.** Step 3 compares the
+scanned source text against the rendered DOM text, so an entity the scanner can't
+decode (`&eacute;` in the source, `é` on screen) fails the comparison and makes
+its whole element read-only. `ENTITY_CODE_POINTS` therefore carries the full HTML4
+Latin-1 set plus common punctuation — 166 names. Expanding it is safe and makes
+more text editable; `encodeText` stays deliberately minimal, re-emitting only the
+parsing-critical characters and the invisible ones (NBSP, soft hyphen, en/em/thin
+space) that would otherwise be impossible to spot in a diff. Editing a run does
+rewrite its entity spelling; leaving it alone does not, which is invariant 2.
 
 ## Review comments
 
@@ -158,7 +173,7 @@ template already scales itself.
 npm test
 ```
 
-27 tests. Three of them round-trip a real production document and skip unless
+29 tests. Three of them round-trip a real production document and skip unless
 you point them at one — client documents are never committed:
 
 ```bash

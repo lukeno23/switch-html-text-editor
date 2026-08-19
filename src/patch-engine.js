@@ -33,15 +33,50 @@ const VOID_TAGS = new Set([
   'link', 'meta', 'param', 'source', 'track', 'wbr',
 ]);
 
-const NAMED_ENTITIES = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
-  mdash: '—', ndash: '–', hellip: '…', copy: '©',
-  reg: '®', trade: '™', deg: '°', laquo: '«',
-  raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“',
-  rdquo: '”', bull: '•', middot: '·', times: '×',
-  euro: '€', pound: '£', shy: '­', ensp: ' ',
-  emsp: ' ', thinsp: ' ',
+/*
+ * Named entities, as name -> code point. The HTML4 Latin-1 set plus the
+ * punctuation and symbols documents actually use.
+ *
+ * Coverage matters for editability, not just display: a run is only made
+ * editable when the scanned source text matches the rendered DOM text, so an
+ * entity we cannot decode (`&eacute;` in the source vs `é` on screen) makes its
+ * whole element read-only. Decoding more than encodeText re-emits is safe —
+ * applyEdits compares decoded text, so an untouched run is never rewritten.
+ */
+const ENTITY_CODE_POINTS = {
+  quot: 34, amp: 38, apos: 39, lt: 60, gt: 62, nbsp: 160,
+  iexcl: 161, cent: 162, pound: 163, curren: 164, yen: 165, brvbar: 166,
+  sect: 167, uml: 168, copy: 169, ordf: 170, laquo: 171, not: 172,
+  shy: 173, reg: 174, macr: 175, deg: 176, plusmn: 177, sup2: 178,
+  sup3: 179, acute: 180, micro: 181, para: 182, middot: 183, cedil: 184,
+  sup1: 185, ordm: 186, raquo: 187, frac14: 188, frac12: 189, frac34: 190,
+  iquest: 191, Agrave: 192, Aacute: 193, Acirc: 194, Atilde: 195, Auml: 196,
+  Aring: 197, AElig: 198, Ccedil: 199, Egrave: 200, Eacute: 201, Ecirc: 202,
+  Euml: 203, Igrave: 204, Iacute: 205, Icirc: 206, Iuml: 207, ETH: 208,
+  Ntilde: 209, Ograve: 210, Oacute: 211, Ocirc: 212, Otilde: 213, Ouml: 214,
+  times: 215, Oslash: 216, Ugrave: 217, Uacute: 218, Ucirc: 219, Uuml: 220,
+  Yacute: 221, THORN: 222, szlig: 223, agrave: 224, aacute: 225, acirc: 226,
+  atilde: 227, auml: 228, aring: 229, aelig: 230, ccedil: 231, egrave: 232,
+  eacute: 233, ecirc: 234, euml: 235, igrave: 236, iacute: 237, icirc: 238,
+  iuml: 239, eth: 240, ntilde: 241, ograve: 242, oacute: 243, ocirc: 244,
+  otilde: 245, ouml: 246, divide: 247, oslash: 248, ugrave: 249, uacute: 250,
+  ucirc: 251, uuml: 252, yacute: 253, thorn: 254, yuml: 255, OElig: 338,
+  oelig: 339, Scaron: 352, scaron: 353, Yuml: 376, fnof: 402, circ: 710,
+  tilde: 732, ensp: 8194, emsp: 8195, thinsp: 8201, zwnj: 8204, zwj: 8205,
+  lrm: 8206, rlm: 8207, ndash: 8211, mdash: 8212, lsquo: 8216, rsquo: 8217,
+  sbquo: 8218, ldquo: 8220, rdquo: 8221, bdquo: 8222, dagger: 8224, Dagger: 8225,
+  bull: 8226, hellip: 8230, permil: 8240, prime: 8242, Prime: 8243, lsaquo: 8249,
+  rsaquo: 8250, oline: 8254, frasl: 8260, euro: 8364, trade: 8482, larr: 8592,
+  uarr: 8593, rarr: 8594, darr: 8595, harr: 8596, minus: 8722, lowast: 8727,
+  radic: 8730, infin: 8734, cap: 8745, cup: 8746, int: 8747, ne: 8800,
+  equiv: 8801, le: 8804, ge: 8805, sub: 8834, sup: 8835, oplus: 8853,
+  otimes: 8855, lceil: 8968, rceil: 8969, lfloor: 8970, rfloor: 8971, loz: 9674,
+  spades: 9824, clubs: 9827, hearts: 9829, diams: 9830,
 };
+
+const NAMED_ENTITIES = Object.fromEntries(
+  Object.entries(ENTITY_CODE_POINTS).map(([k, cp]) => [k, String.fromCodePoint(cp)]),
+);
 
 export function decodeEntities(s) {
   if (s.indexOf('&') === -1) return s;
@@ -69,7 +104,14 @@ export function encodeText(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/ /g, '&nbsp;');
+    // Invisible characters are written as named entities. Left literal they are
+    // indistinguishable from an ordinary space in the source and impossible to
+    // spot in a diff. Visible characters (·, —, ©) are fine as literals.
+    .replace(/\u00a0/g, '&nbsp;')
+    .replace(/\u00ad/g, '&shy;')
+    .replace(/\u2002/g, '&ensp;')
+    .replace(/\u2003/g, '&emsp;')
+    .replace(/\u2009/g, '&thinsp;');
 }
 
 // Find the '>' that closes the tag starting at `start`, ignoring '>' that
@@ -272,8 +314,20 @@ export function applyEdits(scan, edits) {
   for (const e of edits) {
     const run = runs[e.index];
     if (!run) throw new Error(`applyEdits: no run at index ${e.index}`);
+
+    /*
+     * Two no-op checks, and both are needed.
+     *
+     * The DECODED comparison catches a run whose source used an entity spelling
+     * we don't re-emit: `&middot;` decodes to `·`, and encoding that back gives
+     * a literal `·`, so an encoded comparison alone would conclude the run had
+     * changed and rewrite bytes the user never touched.
+     *
+     * The ENCODED comparison then catches the ordinary case.
+     */
+    if (e.text === run.text) continue;
     const encoded = encodeText(e.text);
-    if (encoded === run.raw) continue; // no-op: never rewrite untouched bytes
+    if (encoded === run.raw) continue;
     real.push({ run, encoded });
   }
 

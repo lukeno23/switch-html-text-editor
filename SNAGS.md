@@ -4,6 +4,39 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### A no-op save rewrote runs containing entities we don't re-emit
+*Found and fixed 19 Aug 2026, by testing a document outside the original two.*
+
+`decodeEntities` knows many more named entities than `encodeText` re-emits.
+`&middot;` decoded to `·` and encoded back to a literal `·`, so the drop check —
+which compared only the encoded bytes against the raw bytes — concluded the run
+had changed. **30 footer runs would have been rewritten by a save that touched
+nothing.** The first two test documents only used `&amp;`, so it never showed.
+
+`applyEdits` now also drops an edit when the decoded text is unchanged, which
+makes a no-op byte-identical whatever entity spelling the source used. Editing a
+run still rewrites its spelling within that run, which is allowed and documented.
+
+`encodeText` additionally re-emits invisible characters — soft hyphen, en, em and
+thin spaces — as named entities, since a literal one is impossible to spot in a
+diff. Visible characters stay literal; re-encoding them would rewrite user text.
+
+### Accented characters made their whole element read-only
+*Fixed 19 Aug 2026.* Entity coverage decides editability, not just display: a run
+is only editable when the scanned source text matches the rendered DOM text, so
+`&eacute;` in the source against `é` on screen failed verification. On a real
+16-page document that left 4 elements read-only, including a table cell and a
+paragraph.
+
+The entity table now carries the full HTML4 Latin-1 set plus common punctuation
+(166 names), taking that document from 315/319 mapped to **319/319**. Expanding
+decoding is safe precisely because of the no-op fix above.
+
+### Fit zoom ignored landscape pages
+*Fixed 19 Aug 2026.* **Fit** measured the first `.page`. A document mixing
+portrait with landscape pages (297mm wide) still overflowed sideways on the
+landscape ones. It now fits the widest page.
+
 ### The Comment button silently didn't appear on some selections
 *Fixed 19 Aug 2026.* A comment is anchored by its quoted text, so the selection
 has to sit inside one text node. The Switch templates lead paragraphs with
