@@ -64,8 +64,8 @@ html, body {
   height: 52px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 0 16px;
+  gap: 10px;
+  padding: 0 14px;
   background: var(--green-unknown);
   border-bottom: 1px solid var(--rule-on-dark);
   position: relative;
@@ -84,7 +84,8 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 38vw;
+  flex: 0 1 auto;
+  min-width: 40px;
 }
 #bar .name.empty { color: rgba(237, 244, 237, 0.5); font-weight: 400; }
 
@@ -92,12 +93,22 @@ html, body {
 
 /* Status pills */
 .pill {
+  flex: none;
   font-size: 11.5px;
   font-weight: 500;
   padding: 3px 10px;
   border-radius: 999px;
   white-space: nowrap;
   border: 1px solid transparent;
+}
+
+/* Narrow windows: the logotype and the layout detail are the first to go, so the
+   controls always stay on one row and readable. */
+@media (max-width: 1000px) {
+  #bar .logo, #bar .rule { display: none; }
+}
+@media (max-width: 820px) {
+  #zoom .level { display: none; }
 }
 .pill        { color: var(--misty-mint); border-color: var(--rule-on-dark-strong); }
 .pill.ok     { background: var(--bean-green); color: var(--green-unknown); border-color: var(--bean-green); }
@@ -108,6 +119,8 @@ html, body {
 
 /* Buttons */
 button {
+  flex: none;
+  white-space: nowrap;
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -327,6 +340,164 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.bad { border-left-color: var(--alert); }
+
+/* ------------------------------------------------------- title bar (document) */
+
+/* Slim bar under the toolbar for editing <title>, which lives in <head> and so
+   has nothing clickable in the preview. */
+#titlebar {
+  position: absolute;
+  top: 52px; left: 0; right: 0;
+  z-index: 3;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: var(--curious-garden);
+  border-bottom: 1px solid var(--rule-on-dark);
+}
+#titlebar.show { display: flex; }
+#titlebar label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--bean-green);
+  flex: none;
+}
+#titlebar input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--misty-mint);
+  background: rgba(0, 0, 0, .22);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-radius: 5px;
+  padding: 6px 10px;
+}
+#titlebar input:focus { outline: none; border-color: var(--bean-green); }
+#titlebar .hint { font-size: 11.5px; color: rgba(237, 244, 237, .55); flex: none; }
+
+/* --------------------------------------------------------------- zoom control */
+
+#zoom { display: none; align-items: center; gap: 6px; flex: none; }
+#zoom.show { display: flex; }
+#zoom button {
+  padding: 3px 9px;
+  font-size: 14px;
+  line-height: 1.1;
+  min-width: 28px;
+}
+#zoom .level {
+  font-size: 11.5px;
+  color: rgba(237, 244, 237, .7);
+  min-width: 60px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ comments */
+
+/* Floating "Comment" affordance that appears over a selection in the preview. */
+#commentBtn {
+  position: absolute;
+  z-index: 6;
+  display: none;
+  transform: translate(-50%, -100%);
+  background: var(--possible-purple);
+  color: var(--green-unknown);
+  border-color: var(--possible-purple);
+  font-weight: 700;
+  font-size: 12px;
+  padding: 5px 11px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+}
+#commentBtn.show { display: block; }
+#commentBtn:hover { filter: brightness(1.05); background: var(--possible-purple); }
+
+#composer {
+  position: absolute;
+  z-index: 7;
+  display: none;
+  width: 340px;
+  transform: translate(-50%, -100%);
+  background: var(--green-unknown);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-left: 3px solid var(--possible-purple);
+  border-radius: 8px;
+  padding: 12px 14px 12px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .5);
+}
+#composer.show { display: block; }
+#composer .quoted {
+  font-size: 11.5px;
+  color: rgba(237, 244, 237, .62);
+  font-style: italic;
+  margin: 0 0 9px;
+  max-height: 3.2em;
+  overflow: hidden;
+  border-left: 2px solid var(--rule-on-dark-strong);
+  padding-left: 8px;
+}
+#composer textarea {
+  width: 100%;
+  min-height: 68px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--misty-mint);
+  background: rgba(0, 0, 0, .25);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-radius: 5px;
+  padding: 8px 10px;
+}
+#composer textarea:focus { outline: none; border-color: var(--possible-purple); }
+#composer .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 9px; }
+#composer .row .spacer { flex: 1; }
+
+/* Commented ranges are painted with the CSS Custom Highlight API — no DOM
+   change at all, which is the only way to highlight without breaking the
+   attributes-only instrumentation rule. */
+#panel .section + .section { margin-top: 14px; }
+#panel li.comment {
+  border-left-color: var(--possible-purple);
+  background: rgba(210, 190, 255, 0.1);
+  align-items: flex-start;
+}
+#panel li.comment.stale {
+  border-left-color: var(--caution);
+  background: rgba(201, 130, 31, 0.1);
+}
+#panel li.comment .who { min-width: 74px; }
+#panel li.comment .body { flex: 1; }
+#panel li.comment .note { color: var(--misty-mint); }
+#panel li.comment .quoted {
+  display: block;
+  font-size: 11.5px;
+  font-style: italic;
+  color: rgba(237, 244, 237, .55);
+  margin-top: 3px;
+}
+#panel li.comment .flag {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--caution);
+  margin-top: 3px;
+  display: block;
+}
+#panel .actions { display: flex; gap: 10px; align-items: baseline; flex: none; }
+#panel .actions a.remove { color: rgba(237, 244, 237, .55); }
+#panel .actions a.remove:hover { color: var(--alert); }
+#panel .bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+#panel .bar h2 { margin: 0; flex: 1; }
+#panel .bar button { padding: 4px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -351,14 +522,40 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   <span class="name empty" id="fname">No document open</span>
   <span class="pill count" id="editCount" hidden></span>
   <span class="pill" id="fit" hidden></span>
+  <span class="pill count" id="commentCount" hidden></span>
   <span class="spacer"></span>
+  <span id="zoom">
+    <button id="zoomOut" title="Zoom out">−</button>
+    <span class="level" id="zoomLevel">100%</span>
+    <button id="zoomIn" title="Zoom in">+</button>
+    <button id="zoomFit" title="Fit the page width to the window">Fit</button>
+  </span>
+  <button id="titleToggle" hidden>Title</button>
   <button id="revert" disabled>Revert all</button>
   <button id="open">Open…</button>
   <button id="save" class="primary" disabled>Save</button>
 </div>
 
+<div id="titlebar">
+  <label for="docTitle">Document title</label>
+  <input id="docTitle" type="text" spellcheck="true" autocomplete="off">
+  <span class="hint">Shown in the browser tab, not on the page.</span>
+</div>
+
 <div id="stage">
   <iframe id="frame" title="Document preview"></iframe>
+</div>
+
+<button id="commentBtn">Comment</button>
+
+<div id="composer">
+  <p class="quoted" id="composerQuote"></p>
+  <textarea id="composerNote" placeholder="What should Claude do with this?"></textarea>
+  <div class="row">
+    <span class="spacer"></span>
+    <button id="composerCancel">Cancel</button>
+    <button id="composerSave" class="primary">Add comment</button>
+  </div>
 </div>
 
 <div id="drop">
@@ -377,14 +574,24 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 </div>
 
 <div id="panel">
-  <h2 id="panelTitle">Layout</h2>
-  <ul id="panelList"></ul>
+  <div class="section" id="commentSection" hidden>
+    <div class="bar">
+      <h2 id="commentTitle">For Claude to review</h2>
+      <button id="copyBrief">Copy brief for Claude</button>
+      <button id="clearComments">Clear all</button>
+    </div>
+    <ul id="commentList"></ul>
+  </div>
+  <div class="section" id="layoutSection" hidden>
+    <h2 id="panelTitle">Layout</h2>
+    <ul id="panelList"></ul>
+  </div>
 </div>
 
 <div id="toast"></div>
 
 <script type="module">
-import { scanDocument, instrument, applyEdits } from './src/patch-engine.js';
+import { scanDocument, instrument, applyEdits, readReview, writeReview } from './src/patch-engine.js';
 
 /* ------------------------------------------------------------------- state */
 
@@ -394,6 +601,13 @@ let fileName = '';
 const edits = new Map();   // run index -> new text
 const nodeToRun = new WeakMap();
 const snapshots = new Map(); // element id -> original innerHTML, for recovery
+
+let comments = [];         // review comments, in document order
+let nextCommentId = 1;
+let loadedReviewJSON = '[]';  // what was in the file, for dirty tracking
+let pendingSelection = null;  // details of the current preview selection
+let titleRun = null;       // the <title> run, editable via the toolbar
+let zoomFactor = 1;
 
 const $ = (id) => document.getElementById(id);
 const frame = $('frame');
@@ -477,7 +691,7 @@ document.addEventListener('drop', async (e) => {
 });
 
 async function load(file, h) {
-  if (edits.size && !confirm('You have unsaved edits. Open a different document anyway?')) return;
+  if (dirty() && !confirm('You have unsaved changes. Open a different document anyway?')) return;
 
   const text = await file.text();
   scan = scanDocument(text);
@@ -485,6 +699,19 @@ async function load(file, h) {
   fileName = file.name;
   edits.clear();
   snapshots.clear();
+  zoomFactor = 1;
+
+  // Comments already in the file come back as they were left.
+  comments = readReview(text).map((c) => ({ ...c }));
+  nextCommentId = comments.reduce((n, c) => Math.max(n, Number(c.id) || 0), 0) + 1;
+  loadedReviewJSON = JSON.stringify(persistable(comments));
+
+  // <title> lives in <head>, so it has nothing clickable in the preview. It is a
+  // normal run with normal offsets, so the toolbar can edit it directly.
+  titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
+  $('docTitle').value = titleRun ? titleRun.text : '';
+  $('titleToggle').hidden = !titleRun;
+  $('titlebar').classList.remove('show');
 
   $('fname').textContent = fileName;
   $('fname').classList.remove('empty');
@@ -544,6 +771,9 @@ function wire(doc) {
   }
 
   measureMM(doc);
+  installHighlightStyle(doc);
+  doc.addEventListener('selectionchange', onSelectionChange);
+  doc.addEventListener('scroll', hideCommentAffordances, true);
   doc.addEventListener('beforeinput', guardInput, true);
   doc.addEventListener('input', onInput, true);
   /*
@@ -564,7 +794,10 @@ function wire(doc) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
   }, true);
 
-  refreshLayout({ full: true });
+  resolveComments(doc);
+  renderComments();
+  applyZoom();
+  refreshLayout();
   reportReadiness(matched, skipped);
 }
 
@@ -714,28 +947,50 @@ function measureSlide(slide) {
     slide.scrollWidth - slide.clientWidth,
   );
   if (spill > 1) return { spill };
+
+  /*
+   * Headroom is only meaningful on slides that flow text inside a .slide-body.
+   * Cover, statement and divider slides compose their content to fill the whole
+   * canvas, so measuring them returns 0mm — which is true but useless, and it
+   * masks the genuinely tight content slide. They are excluded from the headroom
+   * figure deliberately. Overflow is still checked on every slide.
+   */
   const body = slide.querySelector('.slide-body');
   if (!body) return { spill: 0, mm: null };
-  const box = body.getBoundingClientRect();
+  const rect = body.getBoundingClientRect();
   const kids = [...body.children].filter((k) => !k.classList.contains('bleed'));
-  if (!kids.length || !box.height) return { spill: 0, mm: null };
-  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - box.top;
-  return { spill: 0, mm: (box.height - used) / MM };
+  if (!kids.length || !rect.height) return { spill: 0, mm: null };
+  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - rect.top;
+  return { spill: 0, mm: (rect.height - used) / MM };
 }
 
-// Hidden slides report zero size, so a full sweep needs every slide visible.
-// That relayout is far too disruptive to run on each keystroke — it would move
-// the caret — so live checks cover only the slide being edited, and the full
-// sweep runs on load and again before saving.
+/*
+ * Hidden slides report zero size, so measuring them all needs every slide
+ * visible. That relayout would move the caret and the scroll position, so we
+ * save and restore both around it. Everything here is synchronous, so the
+ * browser never paints the intermediate state and the sweep is invisible —
+ * which is what makes it safe to run on every keystroke.
+ */
 function withAllVisible(doc, fn) {
+  const win = doc.defaultView;
+  const sel = doc.getSelection();
+  const caret = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+  const sx = win.scrollX;
+  const sy = win.scrollY;
+
   const wasScroll = doc.body.classList.contains('scroll-mode');
   doc.body.classList.add('scroll-mode');
   const bleeds = [...doc.querySelectorAll('.bleed')];
   const shown = bleeds.map((el) => el.style.display);
   bleeds.forEach((el) => { el.style.display = 'none'; });
+
   try { return fn(); } finally {
     bleeds.forEach((el, i) => { el.style.display = shown[i]; });
     if (!wasScroll) doc.body.classList.remove('scroll-mode');
+    win.scrollTo(sx, sy);
+    if (caret) {
+      try { sel.removeAllRanges(); sel.addRange(caret); } catch { /* node went away */ }
+    }
   }
 }
 
@@ -755,7 +1010,12 @@ function cards(doc) {
  * Measure every card. `full` forces the all-visible sweep needed for slides;
  * without it, hidden slides are skipped and left with whatever status they had.
  */
-function sweep(doc, { full = false } = {}) {
+/*
+ * Measure every card. Slides need the all-visible relayout to be measurable at
+ * all; withAllVisible() preserves the caret and scroll position, so this now
+ * covers every slide on every pass rather than just the visible one.
+ */
+function sweep(doc) {
   const c = cards(doc);
   if (!c) return null;
 
@@ -763,32 +1023,29 @@ function sweep(doc, { full = false } = {}) {
     const over = [];
     let tightest = { n: 0, mm: Infinity };
     c.els.forEach((el, i) => {
-      const visible = el.offsetParent !== null || el.getClientRects().length > 0;
-      if (!visible && !full) return;
       const { spill, mm } = c.measure(el);
       el.classList.toggle('has-overflow', spill > 1);
       if (spill > 1) over.push({ n: i + 1, px: spill, el });
       else if (mm != null && mm < tightest.mm) tightest = { n: i + 1, mm };
     });
-    return { over, tightest, checked: full ? c.els.length : undefined };
+    return { over, tightest };
   };
 
-  const result = (c.kind === 'slide' && full) ? withAllVisible(doc, run) : run();
+  const result = c.kind === 'slide' ? withAllVisible(doc, run) : run();
   return { ...result, ...c };
 }
 
-function refreshLayout({ full = false } = {}) {
+function refreshLayout() {
   const doc = frame.contentDocument;
   if (!doc || !doc.body) return;
   const fit = $('fit');
-  const panel = $('panel');
 
-  const r = sweep(doc, { full });
-  if (!r) { fit.hidden = true; panel.classList.remove('show'); return; }
+  measureMM(doc); // re-measured because zoom changes the pixels-per-mm ratio
+  const r = sweep(doc);
+  if (!r) { fit.hidden = true; renderLayoutSection(null); return; }
 
-  const { over, tightest, els, noun, abbr, kind } = r;
+  const { over, tightest, els, noun, abbr } = r;
   const total = els.length;
-
   const count = (n) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
   fit.hidden = false;
@@ -796,48 +1053,402 @@ function refreshLayout({ full = false } = {}) {
     fit.textContent = `${count(over.length)} overflowing`;
     fit.className = 'pill bad';
   } else if (tightest.n) {
-    const scope = (kind === 'slide' && !full) ? `${noun} ${tightest.n}` : `tightest is ${abbr}${tightest.n}`;
-    let text = `${scope}, ${Math.max(0, tightest.mm).toFixed(0)}mm spare`;
-    if (full || kind === 'page') {
-      text = `${count(total)} ${total === 1 ? 'fits' : 'fit'} · ${text}`;
-    }
-    fit.textContent = text;
+    fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`
+      + ` · tightest is ${abbr}${tightest.n}, ${Math.max(0, tightest.mm).toFixed(0)}mm spare`;
     fit.className = tightest.mm < 8 ? 'pill warn' : 'pill ok';
   } else {
     fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`;
     fit.className = 'pill ok';
   }
 
+  renderLayoutSection(r);
+  refreshSaveState();
+}
+
+function renderLayoutSection(r) {
+  const section = $('layoutSection');
   const list = $('panelList');
   list.innerHTML = '';
-  if (over.length) {
-    $('panelTitle').textContent = `Text no longer fits — ${over.length > 1 ? 'these' : 'this'} `
-      + `${noun}${over.length > 1 ? 's' : ''} will be clipped in the PDF`;
-    for (const o of over) {
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="who">${noun[0].toUpperCase()}${noun.slice(1)} ${o.n}</span>`
-        + `<span class="what">overflowing by ${Math.round(o.px)}px — shorten the text`
-        + ` or split the ${noun}</span>`;
-      const a = document.createElement('a');
-      a.textContent = 'Show me';
-      a.onclick = () => o.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      li.append(a);
-      list.append(li);
-    }
-    panel.classList.add('show');
-  } else {
-    panel.classList.remove('show');
+
+  if (!r || r.over.length === 0) {
+    section.hidden = true;
+    syncPanel();
+    return;
   }
-  refreshSaveState();
+
+  const { over, noun } = r;
+  $('panelTitle').textContent = `Text no longer fits — ${over.length > 1 ? 'these' : 'this'} `
+    + `${noun}${over.length > 1 ? 's' : ''} will be clipped in the PDF`;
+
+  for (const o of over) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="who">${noun[0].toUpperCase()}${noun.slice(1)} ${o.n}</span>`
+      + `<span class="what">overflowing by ${Math.round(o.px)}px — shorten the text`
+      + ` or split the ${noun}</span>`;
+    const a = document.createElement('a');
+    a.textContent = 'Show me';
+    a.onclick = () => o.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    li.append(a);
+    list.append(li);
+  }
+  section.hidden = false;
+  syncPanel();
+}
+
+// The panel is visible when either of its sections has something to say.
+function syncPanel() {
+  const any = !$('layoutSection').hidden || !$('commentSection').hidden;
+  $('panel').classList.toggle('show', any);
 }
 
 // Authoritative pre-save check: sweeps every card, including hidden slides.
 function overflowing() {
   const doc = frame.contentDocument;
   if (!doc || !doc.body) return 0;
-  const r = sweep(doc, { full: true });
+  const r = sweep(doc);
   return r ? r.over.length : 0;
 }
+
+/* ----------------------------------------------------------------- comments */
+
+/*
+ * Review comments let the user flag text for Claude instead of fixing it
+ * themselves. They are anchored by the quoted text plus a little surrounding
+ * context, not by byte offsets, so they survive the user editing elsewhere in
+ * the same run and survive Claude rewriting the document around them.
+ *
+ * Only these fields reach the file. `range` and `resolved` are working state.
+ */
+const PERSISTED = ['id', 'kind', 'page', 'el', 'quote', 'before', 'after', 'note'];
+const persistable = (list) =>
+  list.map((c) => Object.fromEntries(PERSISTED.filter((k) => c[k] !== undefined).map((k) => [k, c[k]])));
+
+function reviewDirty() {
+  return JSON.stringify(persistable(comments)) !== loadedReviewJSON;
+}
+function dirty() {
+  return edits.size > 0 || reviewDirty();
+}
+
+// Highlighting uses the CSS Custom Highlight API, which paints arbitrary ranges
+// with no DOM change at all — the only technique that doesn't break the
+// attributes-only instrumentation rule.
+const CAN_HIGHLIGHT = typeof Highlight === 'function' && typeof CSS !== 'undefined' && 'highlights' in CSS;
+
+function installHighlightStyle(doc) {
+  if (doc.getElementById('hep-highlight-style')) return;
+  const st = doc.createElement('style');
+  st.id = 'hep-highlight-style';
+  // Injected into <head> of the render copy only; never saved.
+  st.textContent = '::highlight(hep-review){background:#d2beff;color:#2f3f28;}'
+    + '::highlight(hep-review-stale){background:#f0d9b5;color:#2f3f28;}';
+  doc.head.append(st);
+}
+
+/* Find the range a comment refers to, preferring the candidate whose
+ * surrounding text matches the context captured when it was made. */
+function findRange(doc, c) {
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const candidates = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!n.parentElement?.closest('.page, .slide')) continue;
+    const host = n.parentElement?.closest('[data-hep]');
+    const el = host ? Number(host.getAttribute('data-hep')) : undefined;
+    let from = 0;
+    for (;;) {
+      const at = n.data.indexOf(c.quote, from);
+      if (at === -1) break;
+      candidates.push({ node: n, at, el });
+      from = at + 1;
+    }
+  }
+  if (candidates.length === 0) return null;
+
+  const score = (cand) => {
+    const b = cand.node.data.slice(Math.max(0, cand.at - 24), cand.at);
+    const a = cand.node.data.slice(cand.at + c.quote.length, cand.at + c.quote.length + 24);
+    return (c.before && b.endsWith(c.before) ? 2 : 0)
+      + (c.after && a.startsWith(c.after) ? 2 : 0)
+      + (c.el !== undefined && cand.el === c.el ? 3 : 0);
+  };
+  const best = candidates.reduce((x, y) => (score(y) > score(x) ? y : x), candidates[0]);
+
+  const r = doc.createRange();
+  r.setStart(best.node, best.at);
+  r.setEnd(best.node, best.at + c.quote.length);
+  return r;
+}
+
+function resolveComments(doc) {
+  for (const c of comments) {
+    c.range = findRange(doc, c);
+    c.resolved = !!c.range;
+  }
+  paintHighlights(doc);
+}
+
+function paintHighlights(doc) {
+  if (!CAN_HIGHLIGHT) return;
+  const win = doc.defaultView;
+  const live = comments.filter((c) => c.range && c.resolved).map((c) => c.range);
+  const stale = [];
+  win.CSS.highlights.set('hep-review', new win.Highlight(...live));
+  win.CSS.highlights.set('hep-review-stale', new win.Highlight(...stale));
+}
+
+/* ---- capturing a selection ---- */
+
+function onSelectionChange() {
+  const doc = frame.contentDocument;
+  if (!doc) return;
+  const sel = doc.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { hideCommentAffordances(); return; }
+
+  const r = sel.getRangeAt(0);
+  const quote = sel.toString();
+  const card = r.startContainer.parentElement?.closest('.page, .slide');
+  // Only single-text-node selections can be quoted unambiguously.
+  if (!card || !quote.trim() || r.startContainer !== r.endContainer || r.startContainer.nodeType !== 3) {
+    hideCommentAffordances();
+    return;
+  }
+
+  const kind = card.classList.contains('slide') ? 'slide' : 'page';
+  const all = [...doc.querySelectorAll(kind === 'slide' ? '.slide' : '.page')];
+  const data = r.startContainer.data;
+  const host = r.startContainer.parentElement?.closest('[data-hep]');
+  pendingSelection = {
+    kind,
+    page: all.indexOf(card) + 1,
+    // Element id narrows the search when the quote is short or repeated. Only a
+    // hint: if Claude restructures the document it is ignored and the quoted
+    // text plus surrounding context does the work.
+    el: host ? Number(host.getAttribute('data-hep')) : undefined,
+    quote,
+    before: data.slice(Math.max(0, r.startOffset - 24), r.startOffset),
+    after: data.slice(r.endOffset, r.endOffset + 24),
+    rect: r.getBoundingClientRect(),
+  };
+
+  if (!$('composer').classList.contains('show')) positionOver($('commentBtn'), pendingSelection.rect, true);
+}
+
+// Place a parent-document element above a rect measured inside the iframe.
+function positionOver(el, rect, show) {
+  const f = frame.getBoundingClientRect();
+  el.style.left = `${f.left + rect.left + rect.width / 2}px`;
+  el.style.top = `${Math.max(f.top + 34, f.top + rect.top - 8)}px`;
+  el.classList.toggle('show', !!show);
+}
+
+function hideCommentAffordances() {
+  $('commentBtn').classList.remove('show');
+}
+
+$('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+$('commentBtn').onclick = () => {
+  if (!pendingSelection) return;
+  hideCommentAffordances();
+  $('composerQuote').textContent = `“${pendingSelection.quote}”`;
+  $('composerNote').value = '';
+  positionOver($('composer'), pendingSelection.rect, true);
+  $('composerNote').focus();
+};
+
+$('composerCancel').onclick = closeComposer;
+function closeComposer() {
+  $('composer').classList.remove('show');
+  $('composerNote').value = '';
+}
+$('composerNote').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeComposer(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); $('composerSave').click(); }
+});
+
+$('composerSave').onclick = () => {
+  const note = $('composerNote').value.trim();
+  if (!pendingSelection) return;
+  if (!note) { $('composerNote').focus(); return; }
+
+  const { kind, page, el, quote, before, after } = pendingSelection;
+  comments.push({ id: nextCommentId++, kind, page, el, quote, before, after, note });
+  comments.sort((a, b) => (a.page - b.page) || (a.id - b.id));
+
+  closeComposer();
+  const doc = frame.contentDocument;
+  resolveComments(doc);
+  renderComments();
+  toast(`Comment added on ${kind} ${page}`);
+};
+
+/* ---- the comments section of the panel ---- */
+
+function renderComments() {
+  const section = $('commentSection');
+  const list = $('commentList');
+  const pill = $('commentCount');
+  list.innerHTML = '';
+
+  pill.hidden = comments.length === 0;
+  pill.textContent = `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+
+  if (comments.length === 0) {
+    section.hidden = true;
+    syncPanel();
+    refreshSaveState();
+    return;
+  }
+
+  const stale = comments.filter((c) => !c.resolved).length;
+  $('commentTitle').textContent = stale
+    ? `For Claude to review — ${comments.length} comment${comments.length === 1 ? '' : 's'}, ${stale} no longer matching the text`
+    : `For Claude to review — ${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+
+  for (const c of comments) {
+    const li = document.createElement('li');
+    li.className = 'comment' + (c.resolved ? '' : ' stale');
+
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = `${c.kind === 'slide' ? 'Slide' : 'Page'} ${c.page}`;
+
+    const body = document.createElement('span');
+    body.className = 'body';
+    const note = document.createElement('span');
+    note.className = 'note';
+    note.textContent = c.note;
+    const quoted = document.createElement('span');
+    quoted.className = 'quoted';
+    quoted.textContent = `“${c.quote}”`;
+    body.append(note, quoted);
+    if (!c.resolved) {
+      const flag = document.createElement('span');
+      flag.className = 'flag';
+      flag.textContent = 'the quoted text has changed — comment kept, but not highlighted';
+      body.append(flag);
+    }
+
+    const actions = document.createElement('span');
+    actions.className = 'actions';
+    if (c.resolved) {
+      const show = document.createElement('a');
+      show.textContent = 'Show me';
+      show.onclick = () => {
+        const el = c.range.startContainer.parentElement;
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      };
+      actions.append(show);
+    }
+    const del = document.createElement('a');
+    del.className = 'remove';
+    del.textContent = 'Remove';
+    del.onclick = () => {
+      comments = comments.filter((x) => x !== c);
+      resolveComments(frame.contentDocument);
+      renderComments();
+    };
+    actions.append(del);
+
+    li.append(who, body, actions);
+    list.append(li);
+  }
+
+  section.hidden = false;
+  syncPanel();
+  refreshSaveState();
+}
+
+$('clearComments').onclick = () => {
+  if (!comments.length) return;
+  if (!confirm(`Remove all ${comments.length} comment(s)? Saving afterwards restores the file exactly.`)) return;
+  comments = [];
+  resolveComments(frame.contentDocument);
+  renderComments();
+};
+
+$('copyBrief').onclick = async () => {
+  const lines = [
+    `Review comments on ${fileName}:`,
+    '',
+    ...comments.flatMap((c, i) => [
+      `${i + 1}. ${c.kind === 'slide' ? 'Slide' : 'Page'} ${c.page} — "${c.quote}"`,
+      `   ${c.note}`,
+      '',
+    ]),
+    'These are also stored in the file itself, in the SWITCH-REVIEW block before',
+    '</body>. Please edit the HTML directly, remove each comment from that block',
+    'once addressed, and re-export the PDF.',
+  ];
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    toast(`Copied a brief for ${comments.length} comment(s)`);
+  } catch {
+    toast('Could not reach the clipboard — the brief is in the console instead.', true);
+    console.log(lines.join('\n'));
+  }
+};
+
+/* -------------------------------------------------------------- document title */
+
+$('titleToggle').onclick = () => {
+  const open = $('titlebar').classList.toggle('show');
+  if (open) $('docTitle').focus();
+};
+
+$('docTitle').addEventListener('input', () => {
+  if (!titleRun) return;
+  const v = $('docTitle').value;
+  if (v === titleRun.text) edits.delete(titleRun.index);
+  else edits.set(titleRun.index, v);
+  refreshEditCount();
+});
+$('docTitle').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); $('titlebar').classList.remove('show'); }
+});
+
+/* ----------------------------------------------------------------------- zoom */
+
+/*
+ * A4 pages are 210mm wide, which overflows most laptop windows. The CSS `zoom`
+ * property scales layout and hit-testing together, so the caret stays where it
+ * is drawn — a transform would not. Slides are excluded: the deck template
+ * already scales itself to the viewport.
+ */
+const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 2];
+
+function applyZoom() {
+  const doc = frame.contentDocument;
+  if (!doc || !doc.documentElement) return;
+  const c = cards(doc);
+  const usable = !!c && c.kind === 'page';
+  $('zoom').classList.toggle('show', usable);
+  doc.documentElement.style.zoom = usable ? String(zoomFactor) : '';
+  $('zoomLevel').textContent = `${Math.round(zoomFactor * 100)}%`;
+}
+
+function stepZoom(dir) {
+  const i = ZOOM_STEPS.findIndex((z) => Math.abs(z - zoomFactor) < 0.001);
+  const at = i === -1 ? ZOOM_STEPS.indexOf(1) : i;
+  zoomFactor = ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, at + dir))];
+  applyZoom();
+  refreshLayout();
+}
+
+$('zoomIn').onclick = () => stepZoom(1);
+$('zoomOut').onclick = () => stepZoom(-1);
+$('zoomFit').onclick = () => {
+  const doc = frame.contentDocument;
+  const card = doc?.querySelector('.page');
+  if (!card) return;
+  doc.documentElement.style.zoom = '';
+  const natural = card.getBoundingClientRect().width;
+  doc.documentElement.style.zoom = String(zoomFactor);
+  if (!natural) return;
+  // Leave a little room so the page card isn't flush against the window edge.
+  zoomFactor = Math.min(2, Math.max(0.25, (frame.clientWidth - 48) / natural));
+  applyZoom();
+  refreshLayout();
+};
 
 /* ------------------------------------------------------------------- saving */
 
@@ -851,13 +1462,15 @@ function refreshEditCount() {
 }
 
 function refreshSaveState() {
-  $('save').disabled = !scan || edits.size === 0;
+  $('save').disabled = !scan || !dirty();
   $('save').textContent = handle || !scan ? 'Save' : 'Download copy';
 }
 
 $('revert').onclick = () => {
-  if (!confirm(`Discard all ${edits.size} edit(s) and reload the original text?`)) return;
+  if (!confirm(`Discard all ${edits.size} text edit(s) and reload the original wording?`
+    + (comments.length ? '\n\nComments are kept — use "Clear all" in the panel to remove those.' : ''))) return;
   edits.clear();
+  if (titleRun) $('docTitle').value = titleRun.text;
   frame.srcdoc = instrument(scan);
   refreshEditCount();
 };
@@ -868,7 +1481,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function save() {
-  if (!scan || edits.size === 0) return;
+  if (!scan || !dirty()) return;
 
   const bad = overflowing();
   if (bad && !confirm(
@@ -878,6 +1491,9 @@ async function save() {
   let html, changed;
   try {
     ({ html, changed } = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text }))));
+    // The review block goes in afterwards: it lives outside every text run, so
+    // it cannot disturb the offsets applyEdits just used.
+    html = writeReview(html, persistable(comments));
   } catch (err) {
     toast(`Not saved — ${err.message}`, true);
     return;
@@ -889,7 +1505,7 @@ async function save() {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(a.href);
-    toast(`Downloaded an edited copy (${changed} block(s) changed)`);
+    toast(`Downloaded a copy — ${savedSummary(changed)}`);
     return;
   }
 
@@ -910,13 +1526,23 @@ async function save() {
   // The saved file is the new baseline, so rescan against it.
   scan = scanDocument(html);
   edits.clear();
+  titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
+  loadedReviewJSON = JSON.stringify(persistable(comments));
   frame.srcdoc = instrument(scan);
   refreshEditCount();
-  toast(`Saved ${fileName} — ${changed} text block(s) changed`);
+  toast(`Saved ${fileName} — ${savedSummary(changed)}`);
+}
+
+function savedSummary(changed) {
+  const parts = [];
+  if (changed) parts.push(`${changed} text block${changed === 1 ? '' : 's'} changed`);
+  if (comments.length) parts.push(`${comments.length} comment${comments.length === 1 ? '' : 's'} stored`);
+  else if (!changed) parts.push('comments cleared');
+  return parts.join(', ');
 }
 
 window.addEventListener('beforeunload', (e) => {
-  if (edits.size) { e.preventDefault(); e.returnValue = ''; }
+  if (dirty()) { e.preventDefault(); e.returnValue = ''; }
 });
 
 /*
@@ -940,6 +1566,13 @@ window.__hep = {
     unverifiedElements: scan
       ? frame.contentDocument.querySelectorAll('[data-hep]:not([contenteditable])').length : 0,
     edits: edits.size,
+    comments: comments.length,
+    commentsResolved: comments.filter((c) => c.resolved).length,
+    canHighlight: CAN_HIGHLIGHT,
+    zoom: zoomFactor,
+    docTitle: $('docTitle').value,
+    dirty: dirty(),
+    reviewDirty: reviewDirty(),
     overflowing: overflowing(),
     pages: frame.contentDocument ? frame.contentDocument.querySelectorAll('.page').length : 0,
   }),
@@ -958,7 +1591,35 @@ window.__hep = {
     }
     return false;
   },
-  build: () => applyEdits(scan, [...edits].map(([index, text]) => ({ index, text }))),
+  build: () => {
+    const out = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text })));
+    return { ...out, html: writeReview(out.html, persistable(comments)) };
+  },
+  // Add a comment on the nth editable text node, exercising the real path.
+  comment: (n, note) => {
+    const doc = frame.contentDocument;
+    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      if (el.offsetParent === null && el.getClientRects().length === 0) continue;
+      for (const node of textNodesOf(el)) {
+        if (n-- === 0) {
+          const r = doc.createRange();
+          r.setStart(node, 0);
+          r.setEnd(node, node.data.length);
+          const sel = doc.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          onSelectionChange();
+          $('commentBtn').click();
+          $('composerNote').value = note;
+          $('composerSave').click();
+          return true;
+        }
+      }
+    }
+    return false;
+  },
+  comments: () => persistable(comments),
+  setZoom: (z) => { zoomFactor = z; applyZoom(); refreshLayout(); },
 };
 </script>
 </body>

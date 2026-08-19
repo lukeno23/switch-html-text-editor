@@ -42,9 +42,20 @@ whole point of the design.
    reporting "N left read-only" is normal, not a bug.
 
 5. **Instrumentation must never reach disk.** `instrument()` adds `data-hep`
-   attributes to a *copy* used only for rendering. Saving always builds from the
-   pristine `scan.source`. Assert `data-hep` and `contenteditable` are absent
-   from any saved output.
+   attributes to a *copy* used only for rendering, and `installHighlightStyle()`
+   injects a `<style>` into that copy's `<head>`. Saving always builds from the
+   pristine `scan.source`. Assert `data-hep`, `contenteditable`, `spellcheck`
+   and `hep-highlight-style` are absent from any saved output.
+
+6. **Exactly one region outside the text runs may be written: the review block.**
+   This is the single, deliberate exception to invariant 2. It is bounded — one
+   marker-delimited HTML comment (`SWITCH-REVIEW-START` / `SWITCH-REVIEW-END`)
+   immediately before `</body>`, written only by `writeReview()`, never inside a
+   text run. It is safe because HTML comments do not render (so the PDF is
+   unaffected) and `scanDocument()` skips comments (so it can never become
+   editable text). Removing every comment must restore the file byte-for-byte —
+   there is a test for exactly that, on a real document. Do not widen this
+   exception; if something else needs persisting, it goes in this block.
 
 ## How source and preview are correlated
 
@@ -65,6 +76,28 @@ given the browser's HTML parser does error recovery the scanner doesn't model.
 
 Why not wrap each text node in a span: it would make the span the first element
 child, breaking `:first-child` rules. Attributes are the only safe instrument.
+
+## Review comments
+
+Comments let the user flag text for Claude instead of fixing it themselves, which
+covers everything editing can't: restructuring, tone, claims to check.
+
+- **Anchored by content, not offsets.** Each comment stores its quoted text, ~24
+  characters of context either side, and the `data-hep` element id as a
+  tiebreaker. `findRange()` scores candidates on those three and takes the best.
+  Byte offsets would break the moment anything above them changed; content
+  anchors survive edits elsewhere and survive Claude rewriting the document.
+- **Stale anchors are flagged, never dropped.** If the quote no longer matches,
+  the comment stays in the file, is marked in the panel, and isn't highlighted.
+- **Highlighting uses the CSS Custom Highlight API.** It paints arbitrary ranges
+  with zero DOM change, which is the only technique compatible with invariant 3's
+  attributes-only rule — wrapping the range in a `<span>` would make it the first
+  element child and break `:first-child`.
+- **Comments can attach to read-only text**, including the script-generated slide
+  counter, since commenting needs no mapped run.
+- Only the fields in `PERSISTED` reach the file; `range` and `resolved` are
+  working state. `dirty()` covers edits *and* comment changes, so reopening a
+  file that already has comments is correctly not dirty.
 
 ## Editing safety
 
@@ -95,11 +128,23 @@ measurement so it agrees with `generate-pdf.py`:
 
 Note `scrollHeight` can never report *spare* room — with `overflow:hidden` it is
 clamped to the box. Headroom therefore comes from real geometry (children's
-bounding rects) and is reported in millimetres.
+bounding rects) and is reported in millimetres. Headroom is only measured where
+there is a `.slide-body`; cover, statement and divider slides fill their canvas
+by design, so measuring them returns a misleading 0mm and masks the genuinely
+tight slide. Overflow is still checked on all of them.
 
-Hidden slides report zero size, so a full sweep needs `scroll-mode` on the body.
-That relayout moves the caret, so live checks cover only the visible slide and
-`overflowing()` does the full sweep before saving.
+Hidden slides report zero size, so the sweep needs `scroll-mode` on the body.
+`withAllVisible()` saves and restores the selection range and scroll position
+around that relayout, and everything inside is synchronous so no intermediate
+paint occurs — which is what makes a full sweep safe on every keystroke. Don't
+reintroduce a visible-slide-only fast path; it silently missed overflows.
+
+Zoom uses the CSS `zoom` property, never a `transform`: `transform` scales
+painting but not hit-testing, so the caret would land away from where it is
+drawn. Because `scrollHeight`, `clientHeight` and the millimetre probe all scale
+together, overflow readings are identical at any zoom. `measureMM()` is re-run at
+the top of `refreshLayout()` for that reason. Zoom is hidden for decks, whose
+template already scales itself.
 
 ## Testing
 
@@ -107,8 +152,8 @@ That relayout moves the caret, so live checks cover only the visible slide and
 npm test
 ```
 
-18 tests. Two of them round-trip a real production document and skip unless you
-point them at one — client documents are never committed:
+27 tests. Three of them round-trip a real production document and skip unless
+you point them at one — client documents are never committed:
 
 ```bash
 HEP_FIXTURE="/path/to/a/document.html" npm test
@@ -121,8 +166,14 @@ those edits reproduces the original exactly.
 
 For UI work, serve the folder (`.claude/launch.json` defines the `editor` config
 on port 8765) — ES modules won't load from `file://`. `window.__hep` exposes
-`load()`, `state()`, `type()` and `build()` so the source↔preview correlation can
-be driven from the console. `state().unverifiedElements` should be 0 for
+`load()`, `state()`, `type()`, `comment()`, `comments()`, `setZoom()` and
+`build()` so the source↔preview correlation can be driven from the console.
+
+Two traps when testing from the console: `load()` starts with a `confirm()` when
+there are unsaved changes, and an automated context auto-dismisses it so `load()`
+returns early and you silently keep the previous document's state. Reload the
+page between loads. And `__hep.comment()` skips hidden elements, because a hidden
+slide can't be selected by a real user either. `state().unverifiedElements` should be 0 for
 documents and 1 for decks (the slide counter).
 
 ## Branding
@@ -134,7 +185,8 @@ the real logotype as inline SVG recoloured via `currentColor`, plus the 2×2
 geometric motif, 3px bean-green left-border callouts and `→` arrow bullets.
 
 `--alert: #c0392b` is lifted from the templates' own overflow badge so warnings
-match. It and `--caution` are the only non-palette values.
+match. It and `--caution` are the only non-palette values. `possible-purple`
+carries counts and review annotation, keeping it clear of the main accents.
 
 ## Deploying
 

@@ -32,6 +32,38 @@ logo, 22 fixed pages):
 The same holds for presentations. Editing the cover heading of a 13-slide client
 deck changed 1 run and left all 307,763 markup bytes identical.
 
+## Flagging text for Claude
+
+Editing only solves wording. For anything needing judgement — a claim to check, a
+paragraph to restructure, a tone problem — select the text and click **Comment**.
+
+Comments are stored in the file itself, in one marker-delimited HTML comment
+before `</body>`:
+
+```html
+<!-- SWITCH-REVIEW-START
+[{"id":1,"kind":"page","page":3,"quote":"…","note":"expand this"}]
+SWITCH-REVIEW-END -->
+```
+
+HTML comments don't render, so the PDF is unaffected and the file stays valid for
+`make-selfcontained.py` and `generate-pdf.py`. Removing every comment restores the
+file byte-for-byte.
+
+So one file carries both your wording fixes and your notes. Hand it back to Claude
+and ask it to address the comments; **Copy brief for Claude** puts a plain-text
+summary on the clipboard if you'd rather paste the context too.
+
+Commented ranges are highlighted in the preview using the CSS Custom Highlight
+API, which paints arbitrary ranges without touching the DOM — the only technique
+that doesn't break the attributes-only instrumentation rule.
+
+You can comment on text the editor can't *edit*, including script-generated page
+numbers and slide counters. Comments are anchored by their quoted text plus
+surrounding context and the element they sit in, so they survive edits elsewhere.
+If the quoted text itself changes, the comment is kept and flagged rather than
+silently dropped.
+
 ## Overflow warnings
 
 Both Switch templates use fixed-size cards and **never auto-flow content** — so
@@ -47,14 +79,23 @@ if anything overflows.
 
 After saving, regenerate the PDF as usual with `generate-pdf.py`.
 
+## Zoom and the document title
+
+A4 pages are wider than most laptop windows, so the toolbar has a zoom control
+with a **Fit** button. It uses the CSS `zoom` property, not a `transform`, so the
+caret stays where it is drawn and overflow measurement is unaffected. Zoom is
+hidden for presentations, which already scale themselves to the viewport.
+
+`<title>` lives in `<head>` and so has nothing to click in the preview. The
+**Title** button opens a field for it.
+
 ## Branding
 
 The interface follows the Switch design system (Kit v1.1):
 
 - **Canonical "Shades of Sage" palette** — `green-unknown` chrome, `bean-green`
   for the primary action and accents, `misty-mint` on dark, `possible-purple`
-  reserved for the edit count, following the rule that purple is for numbered
-  things only.
+  reserved for counts and review annotation, keeping it off the main accents.
 - **Brand fonts, local WOFF2** — DM Sans 400/500/700 throughout, Source Serif 4
   sparingly for the cover-meta line. Converted from the kit's own TTFs with
   `fontTools`, same as `make-selfcontained.py` does. No Google Fonts.
@@ -98,7 +139,9 @@ client documents cannot be committed by accident.
 
 - **Text only.** Styling, layout and structure cannot be changed — by design.
   Pressing Return, pasting formatted content, and anything that would alter the
-  document's structure is blocked.
+  document's structure is blocked. Use a comment for anything structural.
+- **Comments need a selection inside one text node**, so you can't comment across
+  an inline boundary like a `<strong>` lead-in and the sentence after it.
 - **Logo and SVG text are locked**, so the Switch logotype can't be broken.
 - **Script-generated text is read-only.** Slide counters and page numbers are
   written at runtime, so they have no fixed counterpart in the source. The editor
@@ -115,10 +158,18 @@ scope, is in [SNAGS.md](SNAGS.md).
 npm test
 ```
 
-18 tests covering the entity codec, the scanner (script/style interiors,
-quoted-attribute edge cases, comments, SVG, whitespace), instrumentation,
-edit application, overlap rejection, and two round-trip tests against the real
-white paper.
+27 tests covering the entity codec, the scanner (script/style interiors,
+quoted-attribute edge cases, comments, SVG, whitespace), instrumentation, edit
+application, overlap rejection, the review block (round-trip, replacement rather
+than stacking, `-->` escaping, unparseable blocks, composition with edits), and
+three round-trip tests against a real production document.
+
+Those three skip unless you point them at one — client documents are never
+committed:
+
+```bash
+HEP_FIXTURE="/path/to/a/document.html" npm test
+```
 
 To exercise the UI, serve the folder and open it:
 
@@ -126,5 +177,6 @@ To exercise the UI, serve the folder and open it:
 python3 -m http.server 8765
 ```
 
-`window.__hep` exposes `load()`, `state()`, `type()` and `build()` for testing
-the source↔preview correlation from the console.
+`window.__hep` exposes `load()`, `state()`, `type()`, `comment()`, `comments()`,
+`setZoom()` and `build()` for driving the source↔preview correlation from the
+console.

@@ -248,3 +248,104 @@ test('real document: every editable run round-trips through encode/decode', { sk
     'these runs would be rewritten by an edit-and-revert cycle',
   );
 });
+
+/* --------------------------------------------------------------- review block */
+
+import { readReview, writeReview, hasReview } from '../src/patch-engine.js';
+
+const DOC = '<!DOCTYPE html><html><head><title>T</title></head><body>\n<p>Text here</p>\n</body></html>';
+
+test('a document with no review block reads as no comments', () => {
+  assert.equal(hasReview(DOC), false);
+  assert.deepEqual(readReview(DOC), []);
+});
+
+test('review comments round-trip through the block', () => {
+  const comments = [
+    { id: 1, page: 3, quote: 'Fix comms', note: 'too terse, expand this' },
+    { id: 2, page: 7, quote: 'anyone can.', note: 'is this defensible?' },
+  ];
+  const out = writeReview(DOC, comments);
+  assert.ok(hasReview(out));
+  assert.deepEqual(readReview(out), comments);
+});
+
+test('the block sits before </body> and never inside a text run', () => {
+  const out = writeReview(DOC, [{ id: 1, quote: 'x', note: 'y' }]);
+  assert.ok(out.indexOf('SWITCH-REVIEW-START') < out.lastIndexOf('</body>'));
+
+  const scan = scanDocument(out);
+  assert.ok(!scan.runs.some((r) => r.raw.includes('SWITCH-REVIEW')), 'block leaked into a run');
+  // The document's own editable text is untouched by the block's presence.
+  assert.deepEqual(scan.editable.map((r) => r.text), ['Text here']);
+});
+
+test('clearing every comment restores the file byte-for-byte', () => {
+  const withBlock = writeReview(DOC, [{ id: 1, quote: 'a', note: 'b' }]);
+  assert.notEqual(withBlock, DOC);
+  assert.equal(writeReview(withBlock, []), DOC);
+});
+
+test('rewriting the block replaces it rather than stacking copies', () => {
+  let out = writeReview(DOC, [{ id: 1, quote: 'a', note: 'first' }]);
+  out = writeReview(out, [{ id: 1, quote: 'a', note: 'second' }]);
+  assert.equal(out.split('SWITCH-REVIEW-START').length - 1, 1);
+  assert.equal(readReview(out)[0].note, 'second');
+  assert.equal(writeReview(out, []), DOC);
+});
+
+test('notes containing -- or --> cannot break out of the comment', () => {
+  const nasty = 'em--dash, an arrow -> here, and a real --> terminator';
+  const out = writeReview(DOC, [{ id: 1, quote: 'q', note: nasty }]);
+
+  // The dangerous sequence must not appear before the block's own terminator.
+  const body = out.slice(out.indexOf('SWITCH-REVIEW-START'), out.indexOf('SWITCH-REVIEW-END'));
+  assert.ok(!body.includes('-->'), 'raw --> survived inside the block');
+  assert.ok(!body.includes('--'), 'raw -- survived inside the block');
+
+  // ...and the note still comes back exactly as typed.
+  assert.equal(readReview(out)[0].note, nasty);
+  assert.equal(writeReview(out, []), DOC);
+});
+
+test('an unparseable block is ignored rather than guessed at', () => {
+  const broken = DOC.replace('</body>', '<!-- SWITCH-REVIEW-START\n{not json\nSWITCH-REVIEW-END -->\n</body>');
+  assert.deepEqual(readReview(broken), []);
+});
+
+test('edits and review comments compose without touching each other', () => {
+  const scan = scanDocument(DOC);
+  const run = scan.editable[0];
+  const edited = applyEdits(scan, [{ index: run.index, text: 'Replaced text' }]);
+  const withReview = writeReview(edited.html, [{ id: 1, quote: 'Replaced text', note: 'check' }]);
+
+  assert.ok(withReview.includes('<p>Replaced text</p>'));
+  assert.deepEqual(readReview(withReview)[0].note, 'check');
+  // Stripping the block leaves exactly the edited document.
+  assert.equal(writeReview(withReview, []), edited.html);
+});
+
+test('real document: review block leaves every run and all markup alone', { skip: !existsSync(REAL_FILE) && 'no fixture — set HEP_FIXTURE' }, () => {
+  const src = readFileSync(REAL_FILE, 'utf8');
+  const comments = [{ id: 1, page: 3, quote: 'Fix comms', note: 'expand -- properly' }];
+  const out = writeReview(src, comments);
+
+  const a = scanDocument(src);
+  const b = scanDocument(out);
+  assert.deepEqual(b.editable.map((r) => r.text), a.editable.map((r) => r.text));
+
+  const markup = (s) => {
+    let m = '', cur = 0;
+    for (const r of s.runs) { m += s.source.slice(cur, r.start); cur = r.end; }
+    return m + s.source.slice(cur);
+  };
+  // Everything outside the text runs is identical once the block is removed.
+  assert.equal(markup(scanDocument(writeReview(out, []))), markup(a));
+  assert.equal(writeReview(out, []), src, 'clearing comments must restore the original exactly');
+
+  // The build markers and embedded fonts survive.
+  assert.ok(out.includes('===FONTS-START==='));
+  assert.ok(out.includes('===FONTS-END==='));
+  assert.equal((out.match(/data:font\/woff2/g) || []).length, 7);
+  assert.deepEqual(readReview(out), comments);
+});

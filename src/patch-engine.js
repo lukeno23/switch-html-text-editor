@@ -296,3 +296,60 @@ export function applyEdits(scan, edits) {
 
   return { html: out, changed: real.length };
 }
+
+/* ------------------------------------------------------------- review block */
+
+/*
+ * Review comments live in ONE marker-delimited HTML comment placed immediately
+ * before </body>.
+ *
+ * This is the single deliberate exception to "only edited text runs are ever
+ * written". It is safe because the block sits outside every text run, HTML
+ * comments do not render so the PDF is unaffected, and scanDocument() skips
+ * comments so the block can never become editable text. It follows the same
+ * pattern make-selfcontained.py uses for its FONTS-START/FONTS-END markers.
+ */
+
+const REVIEW_RE =
+  /\n?<!--\s*SWITCH-REVIEW-START\s*\r?\n([\s\S]*?)\r?\n\s*SWITCH-REVIEW-END\s*-->[ \t]*\n?/;
+
+/*
+ * A literal '-->' inside the JSON would close the comment early, so any hyphen
+ * that could begin '--' or '->' is written as a JSON \u002d escape. JSON.parse
+ * turns those back into ordinary hyphens, so note text round-trips exactly.
+ */
+function escapeForComment(json) {
+  return json.replace(/-(?=[->])/g, '\\u002d');
+}
+
+export function readReview(src) {
+  const m = REVIEW_RE.exec(src);
+  if (!m) return [];
+  try {
+    const parsed = JSON.parse(m[1]);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return []; // A block we can't parse is ignored, never guessed at.
+  }
+}
+
+export function hasReview(src) {
+  return REVIEW_RE.test(src);
+}
+
+/*
+ * Return `src` with its review block replaced by `comments` — or removed
+ * entirely when `comments` is empty, so clearing every comment restores the
+ * file byte-for-byte.
+ */
+export function writeReview(src, comments) {
+  const stripped = src.replace(REVIEW_RE, '\n');
+  if (!comments || comments.length === 0) return stripped;
+
+  const json = escapeForComment(JSON.stringify(comments, null, 1));
+  const block = `<!-- SWITCH-REVIEW-START\n${json}\nSWITCH-REVIEW-END -->\n`;
+
+  const at = stripped.lastIndexOf('</body>');
+  if (at === -1) return stripped + (stripped.endsWith('\n') ? '' : '\n') + block;
+  return stripped.slice(0, at) + block + stripped.slice(at);
+}
