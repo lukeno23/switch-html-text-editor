@@ -415,6 +415,28 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 #commentBtn.show { display: block; }
 #commentBtn:hover { filter: brightness(1.05); background: var(--possible-purple); }
 
+/* Shown in the button's place when a selection can't be commented on, so the
+   absence of the button is never unexplained. Informational, not clickable. */
+#selectHint {
+  position: absolute;
+  z-index: 6;
+  display: none;
+  transform: translate(-50%, -100%);
+  max-width: 290px;
+  background: var(--green-unknown);
+  color: var(--misty-mint);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-left: 3px solid var(--caution);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+  pointer-events: none;
+}
+#selectHint.show { display: block; }
+#selectHint strong { display: block; font-weight: 700; color: var(--white); }
+
 #composer {
   position: absolute;
   z-index: 7;
@@ -547,6 +569,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 </div>
 
 <button id="commentBtn">Comment</button>
+<div id="selectHint" role="status"></div>
 
 <div id="composer">
   <p class="quoted" id="composerQuote"></p>
@@ -1202,16 +1225,32 @@ function onSelectionChange() {
   const doc = frame.contentDocument;
   if (!doc) return;
   const sel = doc.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { hideCommentAffordances(); return; }
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+    pendingSelection = null;
+    hideCommentAffordances();
+    return;
+  }
 
   const r = sel.getRangeAt(0);
   const quote = sel.toString();
   const card = r.startContainer.parentElement?.closest('.page, .slide');
-  // Only single-text-node selections can be quoted unambiguously.
-  if (!card || !quote.trim() || r.startContainer !== r.endContainer || r.startContainer.nodeType !== 3) {
-    hideCommentAffordances();
+  if (!card || !quote.trim()) { pendingSelection = null; hideCommentAffordances(); return; }
+
+  /*
+   * A comment is anchored by its quoted text, so the selection has to sit inside
+   * a single text node. The Switch templates lead paragraphs with
+   * <strong>Bold.</strong> body text, so selections crossing that boundary are
+   * common — say why rather than just withholding the button.
+   */
+  const why = unquotableReason(r);
+  if (why) {
+    // Drop the previous selection too, so a stale one can never be committed.
+    pendingSelection = null;
+    $('commentBtn').classList.remove('show');
+    showSelectHint(why, r.getBoundingClientRect());
     return;
   }
+  $('selectHint').classList.remove('show');
 
   const kind = card.classList.contains('slide') ? 'slide' : 'page';
   const all = [...doc.querySelectorAll(kind === 'slide' ? '.slide' : '.page')];
@@ -1233,6 +1272,41 @@ function onSelectionChange() {
   if (!$('composer').classList.contains('show')) positionOver($('commentBtn'), pendingSelection.rect, true);
 }
 
+const BLOCKISH = 'p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, figcaption, dt, dd';
+
+/*
+ * Return null when the selection can carry a comment, otherwise a message
+ * explaining what to do instead.
+ */
+function unquotableReason(r) {
+  if (r.startContainer === r.endContainer && r.startContainer.nodeType === 3) return null;
+
+  const asEl = (n) => (n.nodeType === 3 ? n.parentElement : n);
+  const startBlock = asEl(r.startContainer)?.closest(BLOCKISH);
+  const endBlock = asEl(r.endContainer)?.closest(BLOCKISH);
+
+  if (startBlock && endBlock && startBlock !== endBlock) {
+    return {
+      head: 'Select within one paragraph',
+      body: 'This selection spans several, so there is no single piece of text to attach a comment to.',
+    };
+  }
+  return {
+    head: 'Select within one run of text',
+    body: 'This selection crosses bold or italic. Comment on the plain part or the bold part separately.',
+  };
+}
+
+function showSelectHint({ head, body }, rect) {
+  if ($('composer').classList.contains('show')) return;
+  const el = $('selectHint');
+  el.innerHTML = '';
+  const h = document.createElement('strong');
+  h.textContent = head;
+  el.append(h, document.createTextNode(body));
+  positionOver(el, rect, true);
+}
+
 // Place a parent-document element above a rect measured inside the iframe.
 function positionOver(el, rect, show) {
   const f = frame.getBoundingClientRect();
@@ -1243,6 +1317,7 @@ function positionOver(el, rect, show) {
 
 function hideCommentAffordances() {
   $('commentBtn').classList.remove('show');
+  $('selectHint').classList.remove('show');
 }
 
 $('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection

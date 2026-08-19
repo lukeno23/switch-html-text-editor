@@ -4,6 +4,29 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### The Comment button silently didn't appear on some selections
+*Fixed 19 Aug 2026.* A comment is anchored by its quoted text, so the selection
+has to sit inside one text node. The Switch templates lead paragraphs with
+`<strong>Bold.</strong> body text`, so selections crossing that boundary are
+common — and the button simply withheld itself with no explanation.
+
+An explanatory chip now appears in the button's own position, with an amber left
+border so it reads as information rather than an action, and it names the fix:
+
+- crossing bold or italic → *"Select within one run of text — this selection
+  crosses bold or italic. Comment on the plain part or the bold part separately."*
+- spanning paragraphs → *"Select within one paragraph — this selection spans
+  several, so there is no single piece of text to attach a comment to."*
+
+The two cases are told apart by comparing the nearest block ancestor of each end
+of the range. Verified all four states on a real document (valid selection,
+inline crossing, cross-paragraph, cleared selection), and verified by real mouse
+drag that following the advice does then produce the Comment button.
+
+This also closed a latent bug: `pendingSelection` was left stale when a selection
+became invalid, so it is now cleared on every invalid path. Confirmed that
+clicking *Add comment* after an unquotable selection adds nothing.
+
 ### No zoom control
 *Fixed 17 Aug 2026.* A4 pages are 210mm wide, which overflows most laptop
 windows. There is now a zoom control in the toolbar with a **Fit** button that
@@ -49,13 +72,6 @@ inside editable text. It never calls `preventDefault`, so the browser still
 inserts the character. Slide navigation still works when the caret is elsewhere.
 
 ## Open
-
-### Comments must be anchored inside a single text node
-A comment is anchored by its quoted text, so the selection has to sit within one
-text node. Selecting across an inline boundary — from a `<strong>` lead-in into
-the sentence after it — offers no Comment button. In practice you comment on the
-sentence, which is the useful unit, but the silence is unexplained. It should say
-why rather than simply not appearing.
 
 ### Comments on a deck need you to navigate to the slide first
 Hidden slides cannot be selected, so you can only comment on the slide you are

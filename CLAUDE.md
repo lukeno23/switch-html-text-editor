@@ -95,6 +95,12 @@ covers everything editing can't: restructuring, tone, claims to check.
   element child and break `:first-child`.
 - **Comments can attach to read-only text**, including the script-generated slide
   counter, since commenting needs no mapped run.
+- **An unquotable selection gets an explanation, not silence.** `unquotableReason()`
+  distinguishes crossing an inline boundary from spanning blocks, and `#selectHint`
+  appears where the Comment button would be. The templates lead paragraphs with
+  `<strong>`, so users hit this constantly — don't quietly drop the hint. Every
+  path that rejects a selection must also clear `pendingSelection`, or a stale one
+  could be committed against the wrong text.
 - Only the fields in `PERSISTED` reach the file; `range` and `resolved` are
   working state. `dirty()` covers edits *and* comment changes, so reopening a
   file that already has comments is correctly not dirty.

@@ -141,7 +141,8 @@ client documents cannot be committed by accident.
   Pressing Return, pasting formatted content, and anything that would alter the
   document's structure is blocked. Use a comment for anything structural.
 - **Comments need a selection inside one text node**, so you can't comment across
-  an inline boundary like a `<strong>` lead-in and the sentence after it.
+  an inline boundary like a `<strong>` lead-in and the sentence after it. The
+  editor says so when you try, and tells you what to select instead.
 - **Logo and SVG text are locked**, so the Switch logotype can't be broken.
 - **Script-generated text is read-only.** Slide counters and page numbers are
   written at runtime, so they have no fixed counterpart in the source. The editor
