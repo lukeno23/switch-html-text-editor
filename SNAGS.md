@@ -4,6 +4,22 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### Documents referencing fonts by relative path rendered in a fallback typeface
+*Fixed 19 Aug 2026.* Four of ten test documents reference the kit fonts as
+`url('../../Switch Design System/fonts/…')`. The preview is built from the file's
+bytes and has no folder to resolve against, so those faces failed and the document
+rendered in a generic sans — while the home screen claimed "exactly as it will in
+the PDF".
+
+The editor now lends the document its own copies of the seven Switch brand faces.
+Verified on a real document: DM Sans measurably renders (424px vs 400px for the
+fallback at the same size), and on a self-contained document **nothing is
+substituted at all** — zero rules injected, embedded fonts untouched, which is the
+property that matters. Anything still unresolvable is named in a toolbar pill.
+
+The three faces the editor's own chrome doesn't use — DM Sans italic 400, DM Sans
+600, Source Serif 4 600 — are bundled solely so they can be lent to documents.
+
 ### Comments never re-anchored on a document without page cards
 *Found and fixed 19 Aug 2026, by testing a form mockup and a diagram document.*
 
@@ -219,15 +235,12 @@ Slide counters and page numbers are written at runtime and have no fixed
 counterpart in the source, so they can never be safely written back. The editor
 detects this and says so on load. You can still *comment* on them.
 
-### Documents that aren't self-contained
-Files referencing CSS, images or fonts by relative path render without them,
-because the preview is built from the file's own bytes and has no folder to
-resolve against. Editing, commenting and saving are completely unaffected — only
-the preview's appearance is. For Switch templates, `make-selfcontained.py` fixes
-it, as the skill already instructs.
+### Images referenced by relative path cannot be shown
+Fonts are now substituted from the editor's own bundle, but an image — a logo at
+`../../Switch Design System/assets/logos/…` — has no generic equivalent to lend.
+The toolbar names it ("1 image missing") rather than leaving a silent gap.
 
-**Open improvement:** the editor says nothing when this happens, so a document can
-render in fallback fonts with a broken logo and the user may not realise the
-preview is unfaithful. Both are detectable — failed `document.fonts` entries and
-images with `naturalWidth === 0` — so a one-line notice on load is cheap and would
-stop "it appears exactly as it will print" being quietly untrue.
+Fixable in principle with `showDirectoryPicker()`, resolving relative paths against
+a folder the user grants. That would make the preview exact for any document, not
+just Switch ones. Costs an extra permission prompt and the user picking the right
+folder, which for a path two levels up is not obvious.

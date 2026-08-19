@@ -183,6 +183,28 @@ propagation while the caret is in editable text, without `preventDefault` so the
 character still inserts. The presentation template binds Space, ArrowRight and
 PageDown on `window`; without this, typing a space advances the slide.
 
+## Lending the document our fonts
+
+`restoreBrandFonts()` substitutes the editor's bundled brand faces for any
+`@font-face` that failed, which is what makes a non-self-contained document look
+right. Two invariants inside it:
+
+- **Only failed faces are replaced.** A self-contained document has working
+  embedded fonts and overriding them would change what the preview shows. Faces
+  load lazily, so each one is explicitly `load()`ed to find out whether it works —
+  reading `.status` alone reports `unloaded` for anything not yet used.
+- **The substitute `<style>` is render-copy only**, like the highlight style. Assert
+  `hep-font-substitutes` is absent from saved output (invariant 5).
+
+It runs at the top of `wire()`, before anything measures layout, because overflow
+and headroom are measured against the rendered type. `wire()` is therefore async
+and the frame `load` handler catches its rejection.
+
+Anything unfixable — a broken image, a non-brand typeface — goes in the `#fidelity`
+pill rather than being silently ignored. All seven Switch faces are bundled in
+`assets/fonts/` (~207KB); four are used by the editor's own chrome, the other three
+exist purely to lend to documents.
+
 ## Telling a page card from a `div.page`
 
 `.page` and `.slide` are ordinary class names. `looksLikeCards()` requires a

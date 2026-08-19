@@ -80,6 +80,25 @@ pages and slides are protected because deleting one changes pagination.
 rigid card that never reflows, so the space stays empty and the panel says so.
 Flowing documents reflow normally.
 
+## When a document isn't self-contained
+
+A document that references its fonts by relative path — `url('../../Design
+System/fonts/DM-Sans_normal_400.ttf')` — can't resolve them in the preview, which
+is built from the file's own bytes and has no folder to look in. It used to render
+in a fallback typeface with no explanation.
+
+The editor now **lends the document its own copies of the seven Switch brand
+faces**, so it appears in its real typeface. Two rules keep that safe:
+
+- only faces that actually *failed* are substituted, so a self-contained document's
+  embedded fonts are never overridden;
+- the substitute `<style>` goes into the render copy, never the file.
+
+Anything still missing — a logo referenced by relative path, a non-brand
+typeface — is named in an amber pill in the toolbar, with the detail on hover.
+Editing and saving are unaffected either way; only the appearance is. Running
+`make-selfcontained.py` on the document fixes it permanently.
+
 ## Overflow warnings
 
 Both Switch templates use fixed-size cards and **never auto-flow content** — so
@@ -163,8 +182,11 @@ client documents cannot be committed by accident.
 - **Script-generated text is read-only.** Slide counters and page numbers are
   written at runtime, so they have no fixed counterpart in the source. The editor
   detects this and says so on load.
-- **Documents must be self-contained.** Run `make-selfcontained.py` first, as the
-  skill already instructs.
+- **Documents that aren't self-contained** render with substituted brand fonts and
+  a warning about anything still missing. Run `make-selfcontained.py` for an exact
+  preview.
+- **Text inside inline SVG can be commented on but not edited** — SVG elements have
+  no `contentEditable` property, so the browser won't make them an editing host.
 
 The full running list, including what's fixed and what's deliberately out of
 scope, is in [SNAGS.md](SNAGS.md).

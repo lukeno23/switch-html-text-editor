@@ -604,6 +604,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   <span class="pill count" id="editCount" hidden></span>
   <span class="pill" id="fit" hidden></span>
   <span class="pill count" id="commentCount" hidden></span>
+  <span class="pill" id="fidelity" hidden></span>
   <span class="spacer"></span>
   <span id="zoom">
     <button id="zoomOut" title="Zoom out">−</button>
@@ -817,6 +818,7 @@ async function load(file, h) {
 
   $('fname').textContent = fileName;
   $('fname').classList.remove('empty');
+  $('fidelity').hidden = true;
   drop.classList.add('hidden');
 
   frame.srcdoc = instrument(scan);
@@ -829,7 +831,11 @@ frame.addEventListener('load', () => {
   if (!scan) return;
   const doc = frame.contentDocument;
   if (!doc || !doc.body) return;
-  wire(doc);
+  // wire() awaits the font check, so surface a rejection rather than losing it.
+  wire(doc).catch((err) => {
+    console.error('Failed to wire the preview:', err);
+    toast('The preview could not be prepared for editing. See the console.', true);
+  });
 });
 
 let runsByElement = new Map();
@@ -857,7 +863,15 @@ function wireElement(el, { snapshot = true } = {}) {
   return nodes.length;
 }
 
-function wire(doc) {
+async function wire(doc) {
+  // Lend the document our brand fonts first: layout and overflow are measured
+  // against the rendered type, so this has to happen before any measuring.
+  try {
+    reportFidelity(await restoreBrandFonts(doc));
+  } catch (err) {
+    console.warn('Font check failed, continuing without it:', err);
+  }
+
   runsByElement = new Map();
   for (const r of scan.editable) {
     if (!runsByElement.has(r.elementId)) runsByElement.set(r.elementId, []);
@@ -996,6 +1010,129 @@ function restore(el, id) {
 
   refreshEditCount();
   scheduleLayout();
+}
+
+/* ------------------------------------------------- preview fidelity (fonts) */
+
+/*
+ * A document that isn't self-contained references its fonts by relative path —
+ * `url('../../Switch Design System/fonts/DM-Sans_normal_400.ttf')`. The preview is
+ * built from the file's own bytes and has no folder to resolve against, so those
+ * faces fail and the document renders in a fallback typeface. It still edits and
+ * saves perfectly; it just doesn't look like the finished document.
+ *
+ * The editor already carries the seven Switch brand faces, so it can lend them to
+ * the preview. Two rules make that safe:
+ *
+ *   1. Only faces that actually FAILED are substituted. A self-contained document
+ *      has working embedded fonts, and overriding those would change what the
+ *      preview shows — the opposite of the point.
+ *   2. Nothing is written to disk. The substitute <style> goes into the render
+ *      copy, alongside the highlight style, and saving always builds from
+ *      scan.source.
+ */
+const BUNDLED_FACES = [
+  { family: 'DM Sans', weight: '400', style: 'normal', file: 'DMSans-400.woff2' },
+  { family: 'DM Sans', weight: '400', style: 'italic', file: 'DMSans-400i.woff2' },
+  { family: 'DM Sans', weight: '500', style: 'normal', file: 'DMSans-500.woff2' },
+  { family: 'DM Sans', weight: '600', style: 'normal', file: 'DMSans-600.woff2' },
+  { family: 'DM Sans', weight: '700', style: 'normal', file: 'DMSans-700.woff2' },
+  { family: 'Source Serif 4', weight: '400', style: 'normal', file: 'SourceSerif4-400.woff2' },
+  { family: 'Source Serif 4', weight: '600', style: 'normal', file: 'SourceSerif4-600.woff2' },
+];
+
+const cleanFamily = (f) => String(f || '').replace(/["']/g, '').trim();
+
+// Absolute URL, so the rule resolves from inside the srcdoc iframe.
+const fontUrl = (file) => new URL(`assets/fonts/${file}`, location.href).href;
+
+/*
+ * Fonts load lazily, so a face is only 'loaded' or 'error' once something uses
+ * it. Ask for each one explicitly to find out which are genuinely broken.
+ */
+async function findBrokenFaces(doc) {
+  const broken = [];
+  for (const face of [...doc.fonts]) {
+    if (face.status === 'loaded') continue;
+    try {
+      await face.load();
+      if (face.status !== 'loaded') broken.push(face);
+    } catch {
+      broken.push(face);
+    }
+  }
+  return broken;
+}
+
+async function restoreBrandFonts(doc) {
+  const broken = await findBrokenFaces(doc);
+  const substituted = [];
+  const unfixable = [];
+
+  for (const face of broken) {
+    const match = BUNDLED_FACES.find((b) => b.family.toLowerCase() === cleanFamily(face.family).toLowerCase()
+      && b.weight === String(face.weight)
+      && b.style === String(face.style));
+    (match ? substituted : unfixable).push({ face, match });
+  }
+
+  if (substituted.length) {
+    const css = substituted.map(({ match }) =>
+      `@font-face{font-family:'${match.family}';font-style:${match.style};`
+      + `font-weight:${match.weight};src:url(${fontUrl(match.file)}) format('woff2');}`).join('\n');
+    const st = doc.createElement('style');
+    st.id = 'hep-font-substitutes';
+    st.textContent = css;
+    // After the document's own rules, so the working face wins over the broken one.
+    doc.head.append(st);
+    try { await doc.fonts.ready; } catch { /* nothing to wait for */ }
+  }
+
+  const brokenImages = [...doc.images]
+    .filter((i) => i.complete && i.naturalWidth === 0)
+    .map((i) => i.getAttribute('src'));
+
+  return {
+    substituted: substituted.map(({ match }) => `${match.family} ${match.weight}${match.style === 'italic' ? ' italic' : ''}`),
+    unfixable: unfixable.map(({ face }) => `${cleanFamily(face.family)} ${face.weight}`),
+    brokenImages,
+  };
+}
+
+/*
+ * Say plainly when the preview is not a faithful picture of the finished
+ * document, since every other claim the tool makes depends on it being one.
+ */
+function reportFidelity(r) {
+  const pill = $('fidelity');
+  const problems = [];
+  if (r.unfixable.length) {
+    problems.push(`${r.unfixable.length} font${r.unfixable.length === 1 ? '' : 's'} could not be loaded`);
+  }
+  if (r.brokenImages.length) {
+    problems.push(`${r.brokenImages.length} image${r.brokenImages.length === 1 ? '' : 's'} missing`);
+  }
+
+  if (problems.length === 0) {
+    pill.hidden = true;
+    if (r.substituted.length) {
+      toast(`This document's fonts are referenced by relative path, so the editor `
+        + `supplied its own copies of ${r.substituted.length} Switch brand faces. `
+        + `The file itself is untouched.`);
+    }
+    return;
+  }
+
+  pill.hidden = false;
+  pill.className = 'pill warn';
+  // Name the actual problem rather than a vague "not exact", so the user knows
+  // whether it matters to them.
+  pill.textContent = problems.join(' · ');
+  pill.title = `${problems.join(' and ')}, because this document references them by `
+    + `relative path and the preview has no folder to resolve against.\n\n`
+    + `Editing and saving are unaffected — only the appearance.\n\n`
+    + (r.brokenImages.length ? `Missing: ${r.brokenImages.join(', ')}\n\n` : '')
+    + `Running make-selfcontained.py on the document fixes this permanently.`;
 }
 
 /* --------------------------------------------------------- layout / overflow */
@@ -2063,6 +2200,12 @@ window.__hep = {
     deletions: deletions.length,
     canHighlight: CAN_HIGHLIGHT,
     zoom: zoomFactor,
+    fidelityWarning: $('fidelity').hidden ? null : $('fidelity').textContent,
+    substitutedFonts: (() => {
+      const d = frame.contentDocument;
+      const st = d && d.getElementById('hep-font-substitutes');
+      return st ? (st.textContent.match(/@font-face/g) || []).length : 0;
+    })(),
     docTitle: $('docTitle').value,
     dirty: dirty(),
     reviewDirty: reviewDirty(),
