@@ -206,6 +206,16 @@ kept, marked in the panel, and left unhighlighted. It is never silently dropped.
 Re-anchoring it to the replacement text would need a similarity match that could
 guess wrong, so it is deliberately left to the user to remove or redo.
 
+## Next session
+
+**Test the two documents from the new second design system first.** They are the
+first files the engine has seen from a template family with different typefaces and
+a different palette, produced by a separate document skill. Check whether their
+`.page`/`.slide` cards carry `.page-body`/`.slide-body` — `looksLikeCards()` needs
+one of those before overflow warnings engage — and confirm the fidelity pill reads
+sensibly for typefaces the editor cannot lend. Paths are in this project's memory,
+since this repo is public. Every previous new document family has surfaced a bug.
+
 ## Proposed upgrades
 
 Still open, in priority order. Three items from the 19 Aug shortlist were built the

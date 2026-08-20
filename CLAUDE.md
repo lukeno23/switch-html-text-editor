@@ -329,17 +329,33 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
 upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
 
-Two things that are true as of 19 Aug 2026 and easy to trip over:
+**First job: two untested documents from a new design system.** A second document
+skill now exists, for a different brand, with its own typefaces and palette and no
+relation to the Switch templates. Its first two outputs — one paged A4 document
+(~372KB, ~35 `.page`) and one 16:9 deck (~363KB, ~44 `.slide`) — are waiting to be
+tested against the editor. Both are self-contained and carry one script each. The
+paths are in this project's memory, not here, because this repo is public.
 
-- **`switch-documents` SKILL.md is behind the editor.** It was rebuilt at kit v1.2
-  describing typing and commenting; the editor has since gained block and section
-  deletion, an editable `<title>`, zoom and brand-font substitution. Step 5 needs a
-  refresh, and whether v1.2 was ever uploaded to org settings was never confirmed.
-  Each release costs a five-file version bump plus an org upload, so bundle it with
-  the next real change rather than shipping on its own.
+Two things to check rather than assume:
+
+- Whether their cards carry `.page-body`/`.slide-body`. `looksLikeCards()` needs one
+  of those, or several overflow-clipping cards, before it treats a document as paged
+  — so overflow warnings may not engage at all.
+- That the fidelity pill reads sensibly for typefaces the editor does not bundle.
+  Both documents embed their fonts, so nothing should fail, but this is the first
+  real document family whose fonts the editor could not lend if they did.
+
+Then two things worth remembering:
+
+- **The editor and `switch-documents` are one contract**, and both are at v1.3 as of
+  20 Aug 2026 (shipped to org settings, Drive refreshed). If you change how the
+  review block is written or read, SKILL.md step 6 changes with it — and only a
+  release gets that to users, costing a five-file version bump plus an org upload.
+  Bundle it with a real change rather than shipping alone.
 - **Test breadth is what finds bugs here.** Every serious defect so far came from the
   first document in an unfamiliar style, never from more tests on familiar ones. Ask
-  for a new file before calling a feature done.
+  for a new file before calling a feature done — a new document family has found a
+  bug every single time.
 
 ## House rules
 
