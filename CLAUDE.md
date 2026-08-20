@@ -47,10 +47,12 @@ whole point of the design.
    reporting "N left read-only" is normal, not a bug.
 
 5. **Instrumentation must never reach disk.** `instrument()` adds `data-hep`
-   attributes to a *copy* used only for rendering, and `installHighlightStyle()`
-   injects a `<style>` into that copy's `<head>`. Saving always builds from the
-   pristine `scan.source`. Assert `data-hep`, `contenteditable`, `spellcheck`
-   and `hep-highlight-style` are absent from any saved output.
+   attributes to a *copy* used only for rendering; `installHighlightStyle()` and
+   `restoreBrandFonts()` inject `<style>` elements into that copy's `<head>`; and
+   `restoreLogos()` rewrites `img src` on it. Saving always builds from the
+   pristine `scan.source`. Assert `data-hep`, `contenteditable`, `spellcheck`,
+   `hep-highlight-style`, `hep-font-substitutes` and `data-hep-logo-substitute`
+   are absent from any saved output.
 
 6. **Exactly one region outside the text runs may be written: the review block.**
    This is the single, deliberate exception to invariant 2. It is bounded — one
@@ -130,6 +132,13 @@ covers everything editing can't: restructuring, tone, claims to check.
 - Only the fields in `PERSISTED` reach the file; `range` and `resolved` are
   working state. `dirty()` covers edits *and* comment changes, so reopening a
   file that already has comments is correctly not dirty.
+- **Claude answers by writing back, not deleting.** `status` (`addressed` /
+  `declined`) and `response` are persisted, so a reopened document shows a resolved
+  thread with what Claude did rather than a silent absence. Open threads sort first
+  and keep the purple highlight; answered ones get a calmer green
+  (`::highlight(hep-review-done)`). "Copy brief for Claude" carries only open ones —
+  an answered thread is not work to redo. SKILL.md step 6 is the other half of this
+  contract; the two must stay in step.
 
 ## Deleting blocks
 
@@ -200,7 +209,15 @@ It runs at the top of `wire()`, before anything measures layout, because overflo
 and headroom are measured against the rendered type. `wire()` is therefore async
 and the frame `load` handler catches its rejection.
 
-Anything unfixable — a broken image, a non-brand typeface — goes in the `#fidelity`
+`restoreLogos()` does the same for images, and only for images: every broken image
+across the ten test documents is a Switch logo referenced by relative path, and the
+editor carries the real logotype. The colour is read from the background actually
+behind the image — mint on a dark panel, green-unknown on a light one — rather than
+guessed from the filename. Anything not recognisably a logo (a cover graphic, a
+photograph) is left broken on purpose: inventing a replacement would be a lie about
+the document.
+
+Anything unfixable — a stray image, a non-brand typeface — goes in the `#fidelity`
 pill rather than being silently ignored. All seven Switch faces are bundled in
 `assets/fonts/` (~207KB); four are used by the editor's own chrome, the other three
 exist purely to lend to documents.
@@ -242,6 +259,14 @@ drawn. Because `scrollHeight`, `clientHeight` and the millimetre probe all scale
 together, overflow readings are identical at any zoom. `measureMM()` is re-run at
 the top of `refreshLayout()` for that reason. Zoom is hidden for decks, whose
 template already scales itself.
+
+## Recent documents
+
+A `FileSystemFileHandle` survives in IndexedDB, so a document can be reopened
+without the picker. The handle is **not** permission: on a new session the browser
+requires a fresh grant, which is why `reopenRecent()` runs from a click — asking
+needs a user gesture. A handle whose file has moved throws on `getFile()`, so that
+entry is dropped from the list rather than left to fail again.
 
 ## Testing
 

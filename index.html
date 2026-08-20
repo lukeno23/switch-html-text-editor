@@ -238,6 +238,54 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   font-weight: 700;
 }
 
+/* Recently opened documents, reopened from a stored file handle. */
+#recent { margin-top: 26px; }
+#recent h2 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+#recent ul { list-style: none; margin: 0; padding: 0; max-width: 470px; }
+#recent li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+#recent li:last-child { border-bottom: 0; }
+#recent button.link {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--green-unknown);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#recent button.link:hover { color: var(--bean-deep, #6f8f39); text-decoration: underline; background: none; }
+#recent .when { font-size: 11.5px; color: var(--muted); flex: none; }
+#recent button.forget {
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+#recent button.forget:hover { color: var(--alert); background: none; border: 0; }
+
 /* The Claude handover, in DM Sans so it reads as instruction rather than the
    Source Serif cover-meta voice. */
 #drop .handoff {
@@ -540,6 +588,59 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
    change at all, which is the only way to highlight without breaking the
    attributes-only instrumentation rule. */
 #panel .section + .section { margin-top: 14px; }
+
+/* Collapsible sections. The panel caps at 38% of the window and can hold three
+   at once, so each one folds to its header. */
+#panel .bar h2 { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 7px; }
+#panel .bar h2::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform .12s;
+  transform: rotate(90deg);
+  flex: none;
+}
+#panel .section.collapsed .bar h2::before { transform: rotate(0deg); }
+#panel .section.collapsed ul,
+#panel .section.collapsed .caveat { display: none; }
+#panel .bar .tally {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--curious-garden);
+  color: var(--misty-mint);
+}
+
+/* A comment Claude has answered: calmer, with its reply shown beneath. */
+#panel li.comment.done {
+  border-left-color: var(--bean-green);
+  background: rgba(165, 200, 105, 0.08);
+}
+#panel li.comment.done .note { color: rgba(237, 244, 237, .6); }
+#panel li.comment.declined { border-left-color: var(--caution); }
+#panel li.comment .reply {
+  display: block;
+  margin-top: 5px;
+  padding-left: 9px;
+  border-left: 2px solid var(--bean-green);
+  color: var(--misty-mint);
+  font-size: 12.5px;
+}
+#panel li.comment.declined .reply { border-left-color: var(--caution); }
+#panel li.comment .reply b {
+  color: var(--bean-green);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 2px;
+}
+#panel li.comment.declined .reply b { color: var(--caution); }
 #panel li.comment {
   border-left-color: var(--possible-purple);
   background: rgba(210, 190, 255, 0.1);
@@ -662,6 +763,12 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
       needed). It reads them, makes the changes, confirms your manual changes, and
       re-exports the PDF.</p>
     <button id="open2" class="on-light">Choose a file…</button>
+
+    <div id="recent" hidden>
+      <h2>Recent</h2>
+      <ul id="recentList"></ul>
+    </div>
+
     <p class="note" id="capability"></p>
   </div>
 </div>
@@ -671,6 +778,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
     <div class="bar">
       <h2 id="commentTitle">For Claude to review</h2>
       <button id="copyBrief">Copy brief for Claude</button>
+      <button id="clearAddressed" hidden>Clear addressed</button>
       <button id="clearComments">Clear all</button>
     </div>
     <ul id="commentList"></ul>
@@ -735,6 +843,110 @@ if (CAN_SAVE_IN_PLACE) {
     + 'leaving your original untouched. Please switch to Chrome or Edge.';
 }
 
+/* --------------------------------------------------------- recent documents */
+
+/*
+ * A FileSystemFileHandle survives in IndexedDB, so a document can be reopened
+ * without hunting for it again. The handle alone is not permission: on a new
+ * session the browser requires a fresh grant, which is why reopening happens on
+ * a click — a user gesture is required to ask.
+ */
+const RECENT_DB = 'hep-recent';
+const RECENT_STORE = 'handles';
+const RECENT_MAX = 8;
+
+function withStore(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(RECENT_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(RECENT_STORE, { keyPath: 'id' });
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction(RECENT_STORE, mode);
+      const out = fn(tx.objectStore(RECENT_STORE));
+      tx.oncomplete = () => { db.close(); resolve(out?.result ?? out); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+  });
+}
+
+const readRecent = () => withStore('readonly', (st) => st.getAll()).catch(() => []);
+
+async function rememberRecent(handle, name) {
+  if (!handle) return; // nothing to reopen without a handle
+  try {
+    const all = await readRecent();
+    for (const row of all) {
+      // isSameEntry is the only reliable way to compare two handles.
+      if (row.handle && await row.handle.isSameEntry(handle).catch(() => false)) {
+        await withStore('readwrite', (st) => st.delete(row.id));
+      }
+    }
+    await withStore('readwrite', (st) => st.put({ id: `${Date.now()}-${name}`, handle, name, at: Date.now() }));
+    const kept = (await readRecent()).sort((a, b) => b.at - a.at);
+    for (const row of kept.slice(RECENT_MAX)) {
+      await withStore('readwrite', (st) => st.delete(row.id));
+    }
+  } catch (err) {
+    console.warn('Could not record this document as recent:', err);
+  }
+  renderRecent();
+}
+
+const forgetRecent = (id) => withStore('readwrite', (st) => st.delete(id)).then(renderRecent).catch(() => {});
+
+function whenText(at) {
+  const mins = Math.round((Date.now() - at) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+async function renderRecent() {
+  const box = $('recent');
+  const list = $('recentList');
+  if (!CAN_SAVE_IN_PLACE) { box.hidden = true; return; }
+
+  const rows = (await readRecent()).filter((r) => r.handle).sort((a, b) => b.at - a.at);
+  list.innerHTML = '';
+  box.hidden = rows.length === 0;
+
+  for (const row of rows) {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.className = 'link';
+    open.textContent = row.name;
+    open.onclick = () => reopenRecent(row);
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = whenText(row.at);
+    const drop = document.createElement('button');
+    drop.className = 'forget';
+    drop.textContent = '×';
+    drop.title = 'Forget this document';
+    drop.onclick = () => forgetRecent(row.id);
+    li.append(open, when, drop);
+    list.append(li);
+  }
+}
+
+async function reopenRecent(row) {
+  try {
+    // A stored handle carries no standing permission; ask on this click.
+    let perm = await row.handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await row.handle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') { toast('Permission to open that file was declined.', true); return; }
+    await load(await row.handle.getFile(), row.handle);
+  } catch (err) {
+    // Moved, renamed or deleted since it was last opened.
+    toast(`Could not open ${row.name} — it may have been moved or renamed. Removed from the list.`, true);
+    forgetRecent(row.id);
+  }
+}
+
 /* ------------------------------------------------------------------- toast */
 
 let toastTimer;
@@ -750,6 +962,8 @@ function toast(msg, bad = false) {
 /* -------------------------------------------------------------- open a file */
 
 $('open').onclick = $('open2').onclick = openFile;
+
+renderRecent();
 
 async function openFile() {
   if (CAN_SAVE_IN_PLACE) {
@@ -806,6 +1020,7 @@ async function load(file, h) {
   // Comments already in the file come back as they were left.
   deletions = [];
   comments = readReview(text).map((c) => ({ ...c }));
+  sortComments();
   nextCommentId = comments.reduce((n, c) => Math.max(n, Number(c.id) || 0), 0) + 1;
   loadedReviewJSON = JSON.stringify(persistable(comments));
 
@@ -822,6 +1037,7 @@ async function load(file, h) {
   drop.classList.add('hidden');
 
   frame.srcdoc = instrument(scan);
+  rememberRecent(h, file.name);
   // wire() runs on the load event below.
 }
 
@@ -1088,15 +1304,70 @@ async function restoreBrandFonts(doc) {
     try { await doc.fonts.ready; } catch { /* nothing to wait for */ }
   }
 
-  const brokenImages = [...doc.images]
-    .filter((i) => i.complete && i.naturalWidth === 0)
-    .map((i) => i.getAttribute('src'));
+  const images = restoreLogos(doc);
 
   return {
     substituted: substituted.map(({ match }) => `${match.family} ${match.weight}${match.style === 'italic' ? ' italic' : ''}`),
     unfixable: unfixable.map(({ face }) => `${cleanFamily(face.family)} ${face.weight}`),
-    brokenImages,
+    logosFixed: images.fixed,
+    brokenImages: images.stillBroken,
   };
+}
+
+/*
+ * The same idea as the fonts, for images. Every broken image across the test
+ * corpus is a Switch logo referenced by relative path, and the editor carries the
+ * real logotype as inline SVG — so it can stand in.
+ *
+ * The colour is chosen from the background actually behind the image rather than
+ * guessed: mint on a dark panel, green-unknown on a light one. Anything that is
+ * not recognisably a logo (a cover graphic, a photograph) is left broken and
+ * reported, because inventing a replacement for it would be a lie about the
+ * document.
+ */
+function looksLikeSwitchLogo(src) {
+  const path = String(src || '').toLowerCase();
+  return path.includes('switch') && /logo/.test(path);
+}
+
+// Luminance of the nearest ancestor with an actual background colour.
+function behindIsDark(el) {
+  for (let e = el; e; e = e.parentElement) {
+    const bg = getComputedStyle(e).backgroundColor;
+    const m = bg.match(/rgba?\(([^)]+)\)/);
+    if (!m) continue;
+    const [r, g, b, a = '1'] = m[1].split(',').map((v) => parseFloat(v));
+    if (Number(a) === 0) continue; // transparent, keep looking upward
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 140;
+  }
+  return false;
+}
+
+function switchLogoDataUri(colour) {
+  const src = document.querySelector('#bar .logo svg');
+  if (!src) return null;
+  const svg = src.cloneNode(true);
+  svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  svg.querySelectorAll('[fill]').forEach((n) => n.setAttribute('fill', colour));
+  return `data:image/svg+xml,${encodeURIComponent(svg.outerHTML)}`;
+}
+
+function restoreLogos(doc) {
+  const broken = [...doc.images].filter((i) => i.complete && i.naturalWidth === 0);
+  const fixed = [];
+  const stillBroken = [];
+
+  for (const img of broken) {
+    const src = img.getAttribute('src');
+    if (!looksLikeSwitchLogo(src)) { stillBroken.push(src); continue; }
+    const uri = switchLogoDataUri(behindIsDark(img) ? '#edf4ed' : '#2f3f28');
+    if (!uri) { stillBroken.push(src); continue; }
+    // Render copy only, exactly like the font substitutes.
+    img.setAttribute('src', uri);
+    img.dataset.hepLogoSubstitute = '1';
+    fixed.push(src);
+  }
+  return { fixed, stillBroken };
 }
 
 /*
@@ -1115,10 +1386,13 @@ function reportFidelity(r) {
 
   if (problems.length === 0) {
     pill.hidden = true;
-    if (r.substituted.length) {
-      toast(`This document's fonts are referenced by relative path, so the editor `
-        + `supplied its own copies of ${r.substituted.length} Switch brand faces. `
-        + `The file itself is untouched.`);
+    const lent = [
+      r.substituted.length ? `${r.substituted.length} brand font${r.substituted.length === 1 ? '' : 's'}` : null,
+      r.logosFixed.length ? `the Switch logotype` : null,
+    ].filter(Boolean);
+    if (lent.length) {
+      toast(`This document references its assets by relative path, so the editor `
+        + `supplied ${lent.join(' and ')} from its own copies. The file itself is untouched.`);
     }
     return;
   }
@@ -1131,6 +1405,7 @@ function reportFidelity(r) {
   pill.title = `${problems.join(' and ')}, because this document references them by `
     + `relative path and the preview has no folder to resolve against.\n\n`
     + `Editing and saving are unaffected — only the appearance.\n\n`
+    + (r.logosFixed.length ? `The Switch logotype was supplied from the editor's own copy.\n\n` : '')
     + (r.brokenImages.length ? `Missing: ${r.brokenImages.join(', ')}\n\n` : '')
     + `Running make-selfcontained.py on the document fixes this permanently.`;
 }
@@ -1335,6 +1610,7 @@ function renderLayoutSection(r) {
   const { over, noun } = r;
   $('panelTitle').textContent = `Text no longer fits — ${over.length > 1 ? 'these' : 'this'} `
     + `${noun}${over.length > 1 ? 's' : ''} will be clipped in the PDF`;
+  setTally('layoutSection', `${over.length} ${noun}${over.length === 1 ? '' : 's'}`);
 
   for (const o of over) {
     const li = document.createElement('li');
@@ -1546,9 +1822,8 @@ function renderDeletions() {
     return;
   }
 
-  $('deleteTitle').textContent = deletions.length === 1
-    ? 'To be deleted when you save — 1 block'
-    : `To be deleted when you save — ${deletions.length} blocks`;
+  $('deleteTitle').textContent = 'To be deleted when you save';
+  setTally('deleteSection', `${deletions.length} block${deletions.length === 1 ? '' : 's'}`);
 
   for (const d of deletions) {
     const li = document.createElement('li');
@@ -1608,9 +1883,25 @@ $('restoreAll').onclick = () => {
  *
  * Only these fields reach the file. `range` and `resolved` are working state.
  */
-const PERSISTED = ['id', 'kind', 'page', 'where', 'el', 'quote', 'before', 'after', 'note'];
+/*
+ * Fields that reach the file. `status` and `response` are how Claude answers:
+ * rather than deleting a comment it has dealt with, it marks it addressed and
+ * says what it did, so reopening the document shows a resolved thread instead of
+ * a silent absence. `range` and `resolved` are working state and never persist.
+ */
+const PERSISTED = ['id', 'kind', 'page', 'where', 'el', 'quote', 'before', 'after',
+  'note', 'status', 'response'];
+
+const isOpen = (c) => (c.status || 'open') === 'open';
 const persistable = (list) =>
   list.map((c) => Object.fromEntries(PERSISTED.filter((k) => c[k] !== undefined).map((k) => [k, c[k]])));
+
+// Open comments first — they are the work outstanding — then by page, then age.
+function sortComments() {
+  comments.sort((a, b) => (isOpen(b) - isOpen(a))
+    || ((a.page ?? 0) - (b.page ?? 0))
+    || (a.id - b.id));
+}
 
 function reviewDirty() {
   return JSON.stringify(persistable(comments)) !== loadedReviewJSON;
@@ -1630,7 +1921,7 @@ function installHighlightStyle(doc) {
   st.id = 'hep-highlight-style';
   // Injected into <head> of the render copy only; never saved.
   st.textContent = '::highlight(hep-review){background:#d2beff;color:#2f3f28;}'
-    + '::highlight(hep-review-stale){background:#f0d9b5;color:#2f3f28;}';
+    + '::highlight(hep-review-done){background:#dfe7d4;color:#2f3f28;}';
   doc.head.append(st);
 }
 
@@ -1685,10 +1976,11 @@ function resolveComments(doc) {
 function paintHighlights(doc) {
   if (!CAN_HIGHLIGHT) return;
   const win = doc.defaultView;
-  const live = comments.filter((c) => c.range && c.resolved).map((c) => c.range);
-  const stale = [];
-  win.CSS.highlights.set('hep-review', new win.Highlight(...live));
-  win.CSS.highlights.set('hep-review-stale', new win.Highlight(...stale));
+  const anchored = comments.filter((c) => c.range && c.resolved);
+  const open = anchored.filter(isOpen).map((c) => c.range);
+  const done = anchored.filter((c) => !isOpen(c)).map((c) => c.range);
+  win.CSS.highlights.set('hep-review', new win.Highlight(...open));
+  win.CSS.highlights.set('hep-review-done', new win.Highlight(...done));
 }
 
 /* ---- capturing a selection ---- */
@@ -1875,8 +2167,7 @@ $('composerSave').onclick = () => {
 
   const { kind, page, where, el, quote, before, after } = pendingSelection;
   comments.push({ id: nextCommentId++, kind, page, where, el, quote, before, after, note });
-  // Page order where there are pages; otherwise the order they were made.
-  comments.sort((a, b) => ((a.page ?? 0) - (b.page ?? 0)) || (a.id - b.id));
+  sortComments();
 
   closeComposer();
   const doc = frame.contentDocument;
@@ -1900,8 +2191,14 @@ function renderComments() {
   const pill = $('commentCount');
   list.innerHTML = '';
 
+  const open = comments.filter(isOpen);
+  const answered = comments.filter((c) => !isOpen(c));
+
   pill.hidden = comments.length === 0;
-  pill.textContent = `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+  pill.textContent = answered.length
+    ? `${open.length} open · ${answered.length} answered`
+    : `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+  $('clearAddressed').hidden = answered.length === 0;
 
   if (comments.length === 0) {
     section.hidden = true;
@@ -1911,13 +2208,19 @@ function renderComments() {
   }
 
   const stale = comments.filter((c) => !c.resolved).length;
-  $('commentTitle').textContent = stale
-    ? `For Claude to review — ${comments.length} comment${comments.length === 1 ? '' : 's'}, ${stale} no longer matching the text`
-    : `For Claude to review — ${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+  $('commentTitle').textContent = open.length
+    ? `For Claude to review${answered.length ? ' — and what came back' : ''}`
+    : 'Answered by Claude';
+  setTally('commentSection', stale
+    ? `${open.length} open · ${stale} not matching`
+    : `${open.length} open`);
 
   for (const c of comments) {
+    const answeredNow = !isOpen(c);
     const li = document.createElement('li');
-    li.className = 'comment' + (c.resolved ? '' : ' stale');
+    li.className = 'comment'
+      + (c.resolved ? '' : ' stale')
+      + (answeredNow ? (c.status === 'declined' ? ' done declined' : ' done') : '');
 
     const who = document.createElement('span');
     who.className = 'who';
@@ -1933,6 +2236,17 @@ function renderComments() {
     quoted.className = 'quoted';
     quoted.textContent = `“${c.quote}”`;
     body.append(note, quoted);
+
+    // Claude's reply, where there is one.
+    if (answeredNow) {
+      const reply = document.createElement('span');
+      reply.className = 'reply';
+      const label = document.createElement('b');
+      label.textContent = c.status === 'declined' ? 'Claude left this' : 'Claude changed this';
+      reply.append(label, document.createTextNode(c.response || '(no note left)'));
+      body.append(reply);
+    }
+
     if (!c.resolved) {
       const flag = document.createElement('span');
       flag.className = 'flag';
@@ -1950,6 +2264,19 @@ function renderComments() {
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       };
       actions.append(show);
+    }
+    // Reopening puts a thread back on Claude's list without retyping it.
+    if (answeredNow) {
+      const again = document.createElement('a');
+      again.textContent = 'Reopen';
+      again.onclick = () => {
+        delete c.status;
+        delete c.response;
+        sortComments();
+        renderComments();
+        paintHighlights(frame.contentDocument);
+      };
+      actions.append(again);
     }
     const del = document.createElement('a');
     del.className = 'remove';
@@ -1970,6 +2297,37 @@ function renderComments() {
   refreshSaveState();
 }
 
+// Small count chip in a section header, so a collapsed section still reports.
+function setTally(sectionId, text) {
+  const bar = $(sectionId).querySelector('.bar');
+  let chip = bar.querySelector('.tally');
+  if (!chip) {
+    chip = document.createElement('span');
+    chip.className = 'tally';
+    bar.querySelector('h2').after(chip);
+  }
+  chip.textContent = text;
+}
+
+// Clicking a section heading folds it. The tally keeps reporting either way.
+for (const id of ['commentSection', 'deleteSection', 'layoutSection']) {
+  const h = $(id).querySelector('h2');
+  h.tabIndex = 0;
+  h.title = 'Click to fold this section';
+  const toggle = () => $(id).classList.toggle('collapsed');
+  h.onclick = toggle;
+  h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+}
+
+$('clearAddressed').onclick = () => {
+  const answered = comments.filter((c) => !isOpen(c));
+  if (!answered.length) return;
+  if (!confirm(`Remove ${answered.length} answered comment(s)? The open ones stay.`)) return;
+  comments = comments.filter(isOpen);
+  resolveComments(frame.contentDocument);
+  renderComments();
+};
+
 $('clearComments').onclick = () => {
   if (!comments.length) return;
   if (!confirm(`Remove all ${comments.length} comment(s)? Saving afterwards restores the file exactly.`)) return;
@@ -1979,21 +2337,26 @@ $('clearComments').onclick = () => {
 };
 
 $('copyBrief').onclick = async () => {
+  // Only what is still outstanding — an answered thread is not work to redo.
+  const open = comments.filter(isOpen);
+  if (!open.length) { toast('Nothing outstanding — every comment has been answered.'); return; }
+
   const lines = [
-    `Review comments on ${fileName}:`,
+    `Open review comments on ${fileName}:`,
     '',
-    ...comments.flatMap((c, i) => [
+    ...open.flatMap((c, i) => [
       `${i + 1}. ${commentWhere(c)} — "${c.quote}"`,
       `   ${c.note}`,
       '',
     ]),
     'These are also stored in the file itself, in the SWITCH-REVIEW block before',
-    '</body>. Please edit the HTML directly, remove each comment from that block',
-    'once addressed, and re-export the PDF.',
+    '</body>. Please edit the HTML directly, and for each comment set',
+    '"status": "addressed" with a short "response" saying what you changed —',
+    'rather than deleting it — then re-export the PDF.',
   ];
   try {
     await navigator.clipboard.writeText(lines.join('\n'));
-    toast(`Copied a brief for ${comments.length} comment(s)`);
+    toast(`Copied a brief for ${open.length} open comment(s)`);
   } catch {
     toast('Could not reach the clipboard — the brief is in the console instead.', true);
     console.log(lines.join('\n'));
@@ -2201,6 +2564,10 @@ window.__hep = {
     canHighlight: CAN_HIGHLIGHT,
     zoom: zoomFactor,
     fidelityWarning: $('fidelity').hidden ? null : $('fidelity').textContent,
+    logosSubstituted: (() => {
+      const d = frame.contentDocument;
+      return d ? d.querySelectorAll('img[data-hep-logo-substitute]').length : 0;
+    })(),
     substitutedFonts: (() => {
       const d = frame.contentDocument;
       const st = d && d.getElementById('hep-font-substitutes');
@@ -2275,6 +2642,17 @@ window.__hep = {
     return false;
   },
   restoreAll: () => { $('restoreAll').click(); },
+  recent: () => readRecent().then((r) => r.map((x) => ({ name: x.name, at: x.at }))),
+  answer: (id, status, response) => {
+    const c = comments.find((x) => x.id === id);
+    if (!c) return false;
+    c.status = status;
+    c.response = response;
+    sortComments();
+    renderComments();
+    paintHighlights(frame.contentDocument);
+    return true;
+  },
   setZoom: (z) => { zoomFactor = z; applyZoom(); refreshLayout(); },
 };
 </script>

@@ -54,6 +54,13 @@ So one file carries both your wording fixes and your notes. Hand it back to Clau
 and ask it to address the comments; **Copy brief for Claude** puts a plain-text
 summary on the clipboard if you'd rather paste the context too.
 
+**Claude answers in the file.** Rather than deleting a comment it has dealt with,
+it marks the thread `addressed` (or `declined`) with a note saying what it did — so
+reopening the document shows *"Claude changed this: rewrote the paragraph and added
+the FDA reference"* instead of a silent absence. Answered threads sort below open
+ones, take a calmer highlight, and can be reopened with one click. **Clear
+addressed** tidies them once you've read them.
+
 Commented ranges are highlighted in the preview using the CSS Custom Highlight
 API, which paints arbitrary ranges without touching the DOM — the only technique
 that doesn't break the attributes-only instrumentation rule.
@@ -88,14 +95,18 @@ is built from the file's own bytes and has no folder to look in. It used to rend
 in a fallback typeface with no explanation.
 
 The editor now **lends the document its own copies of the seven Switch brand
-faces**, so it appears in its real typeface. Two rules keep that safe:
+faces, and the real logotype** for a Switch logo image that can't be found — with
+the colour taken from the background behind it, mint on dark, green on light. Two
+rules keep that safe:
 
 - only faces that actually *failed* are substituted, so a self-contained document's
   embedded fonts are never overridden;
 - the substitute `<style>` goes into the render copy, never the file.
 
-Anything still missing — a logo referenced by relative path, a non-brand
-typeface — is named in an amber pill in the toolbar, with the detail on hover.
+Anything still missing — a cover graphic, a photograph, a non-brand typeface — is
+named in an amber pill in the toolbar, with the detail on hover. Images that aren't
+recognisably a logo are left alone on purpose; inventing a replacement would
+misrepresent the document.
 Editing and saving are unaffected either way; only the appearance is. Running
 `make-selfcontained.py` on the document fixes it permanently.
 
@@ -113,6 +124,13 @@ of every card — including hidden slides — before saving, asking for confirma
 if anything overflows.
 
 After saving, regenerate the PDF as usual with `generate-pdf.py`.
+
+## Recent documents
+
+Documents you've opened are listed on the home screen and reopen in a click. The
+browser asks permission again each session — a stored handle isn't standing
+consent — and an entry whose file has moved is dropped from the list rather than
+left to fail.
 
 ## Zoom and the document title
 

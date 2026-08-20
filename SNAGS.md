@@ -208,7 +208,9 @@ guess wrong, so it is deliberately left to the user to remove or redo.
 
 ## Proposed upgrades
 
-Agreed shortlist from 19 Aug 2026, in priority order. Nothing started.
+Still open, in priority order. Three items from the 19 Aug shortlist were built the
+same day: Claude writing back into the review block, recent documents, and
+collapsible panel sections.
 
 **Build first.**
 
@@ -216,29 +218,26 @@ Agreed shortlist from 19 Aug 2026, in priority order. Nothing started.
    product / the date changed / the client's name is wrong" — currently 30 manual
    edits or a Claude round-trip. Maps onto the engine as many run edits through the
    well-tested path; show every match before committing.
-2. **Let Claude write back into the review block.** The loop is one-way today: you
-   comment, Claude acts, the comment is deleted, and there is no record of what it
-   did. Marking each `addressed` with a note gives resolved threads on reopen, plus
-   a "Clear addressed" button. Mostly a `SKILL.md` change.
-3. **Show your own edits, and a change list before saving.** Highlighting edited
-   runs is nearly free — the Custom Highlight API is already wired — and a
-   before/after list plus pending deletions makes a careful save verifiable.
+2. **Show your own edits, and a change list before saving.** Highlighting edited
+   runs is nearly free — the Custom Highlight API is already wired for comments —
+   and a before/after list plus pending deletions makes a careful save verifiable.
 
 **Worth a spike.**
 
-4. **Print to PDF from the editor.** The templates carry `@page` rules and
+3. **Print to PDF from the editor.** The templates carry `@page` rules and
    `-webkit-print-color-adjust: exact`, and `generate-pdf.py` drives the same
    Chromium engine. If `frame.contentWindow.print()` matches its output, wording
    changes stop needing Claude or the toolchain. Compare against real
    `generate-pdf.py` output before promising anything.
-5. **`showDirectoryPicker()` for relative asset paths.** Fonts are already lent from
-   the editor's bundle; images can't be. A granted folder would make the preview
-   exact for any document. Costs a permission prompt and picking a folder two levels
-   above the document.
+4. **`showDirectoryPicker()` for the assets a logo substitute can't cover.** Fonts
+   and Switch logos are now lent from the editor's own bundle, which covers every
+   broken asset in the ten test documents. A granted folder plus
+   `DirectoryHandle.resolve()` would make the preview exact for *any* asset — a
+   cover graphic, a photograph — but it costs a permission prompt and picking a
+   folder two levels above the document, for a case that hasn't arisen yet.
 
-**Smaller quality-of-life.** Page indicator and jump-to-page; ⌘K to comment; recent
-documents via stored file handles; collapsible panel sections, since the panel caps
-at 38% of the window and can hold three sections at once.
+**Smaller quality-of-life.** Page indicator and jump-to-page; ⌘K to comment on a
+selection.
 
 ## Won't fix (by design)
 
@@ -269,12 +268,12 @@ Slide counters and page numbers are written at runtime and have no fixed
 counterpart in the source, so they can never be safely written back. The editor
 detects this and says so on load. You can still *comment* on them.
 
-### Images referenced by relative path cannot be shown
-Fonts are now substituted from the editor's own bundle, but an image — a logo at
-`../../Switch Design System/assets/logos/…` — has no generic equivalent to lend.
-The toolbar names it ("1 image missing") rather than leaving a silent gap.
+### Images other than a Switch logo cannot be resolved
+Fonts and Switch logos are lent from the editor's own bundle, which covers every
+broken asset across the ten test documents. A cover graphic or a photograph at a
+relative path still can't be shown — there is nothing generic to lend — and is
+named in the toolbar rather than left as a silent gap.
 
-Fixable in principle with `showDirectoryPicker()`, resolving relative paths against
-a folder the user grants. That would make the preview exact for any document, not
-just Switch ones. Costs an extra permission prompt and the user picking the right
-folder, which for a path two levels up is not obvious.
+CSS `background-image` at a relative path is also not detected. No test document
+uses one, and a failed background load isn't observable the way a failed `<img>` or
+`@font-face` is, so it would need parsing the stylesheets to find candidates.
