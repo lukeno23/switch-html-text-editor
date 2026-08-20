@@ -110,6 +110,12 @@ covers everything editing can't: restructuring, tone, claims to check.
   structure: requiring a `.page`/`.slide` ancestor meant comments on flowing
   documents were written to the file and came back permanently stale. Scoring on
   quote, context and element id is what makes anchoring accurate.
+- **Matching is whitespace-insensitive, and has to be.** A quote comes from
+  `Selection.toString()`, which reports text as *rendered* — whitespace collapsed
+  — while the node holds whatever the source file wrapped and indented.
+  `collapseWhitespace()` builds each node's collapsed text plus a map back to raw
+  offsets, so a match still yields an exact Range. Comparing literally only ever
+  worked by accident, and it also breaks the moment Claude rewraps a paragraph.
 - **Anchored by content, not offsets.** Each comment stores its quoted text, ~24
   characters of context either side, and the `data-hep` element id as a
   tiebreaker. `findRange()` scores candidates on those three and takes the best.
@@ -176,8 +182,8 @@ Other rules worth keeping:
 
 ## Editing safety
 
-`contenteditable="plaintext-only"` sits on the *parent element* (no DOM change),
-with two layers under it:
+`contenteditable="true"` sits on the *parent element* (no DOM change), with two
+layers under it:
 
 - `guardInput` (beforeinput, capture) allows only a whitelist of input types and
   rejects any target range that crosses a text-node boundary or lands on an
@@ -186,6 +192,23 @@ with two layers under it:
   not, `restore()` puts back the snapshot **and re-wires the element plus every
   `[data-hep]` descendant** — re-wiring only direct children silently leaves
   nested `<strong>` read-only. That bug happened once; don't reintroduce it.
+
+**It must not go back to `plaintext-only`.** Chrome gives that mode a UA
+`white-space: pre-wrap` no author rule can override, so the source file's own line
+wrapping renders as real line breaks the moment an element becomes editable — a
+third of the editable elements in every test document rendered differently from
+the printed page, and overflow was measured against that inflated text. `true`
+renders faithfully and gives up nothing: every extra input type it permits
+(`insertParagraph`, `insertLineBreak`, `formatBold`, `insertFromDrop`,
+`insertHTML`, the list commands) is absent from `SAFE_INPUT` and refused. Verify
+that by dispatching each type at a wired element and asserting `defaultPrevented`.
+
+`pastePlainText` keeps paste plain, and **repeats the guard's range check itself**
+because `execCommand` does not raise `beforeinput` — anything routed through
+`execCommand` is invisible to `guardInput`, so it cannot be assumed. That also
+means scripted `execCommand('bold')` from the console *will* corrupt an element
+where a real ⌘B is blocked; don't mistake that for a user-reachable path when
+testing.
 
 Document keybindings are contained by stopping `keydown`/`keypress`/`keyup`
 propagation while the caret is in editable text, without `preventDefault` so the
@@ -240,12 +263,34 @@ measurement so it agrees with `generate-pdf.py`:
 - Pages: `scrollHeight - clientHeight` on `.page-body`.
 - Slides: both axes on `.slide`, with `.bleed` elements excluded.
 
+**A card with no content box has no such contract**, and watching only the card
+edge notices a spill late — one real document's text column stops 16mm short of
+the paper, so text collided with the page number while the editor still said the
+page fit. Those cards therefore also get `textBoxSpill()`, which checks the boxes
+holding their text — but **only those positioned against both top and bottom**. A
+block with auto height grows with its text and can never clip it, and asking it
+anyway reports a few pixels of spill on every heading with tight line-height,
+because the letters paint outside the box. That briefly flagged every cover in the
+test set as overflowing. Cards that do carry `.page-body` are untouched by this,
+so the editor and `generate-pdf.py` still agree exactly where it matters.
+
 Note `scrollHeight` can never report *spare* room — with `overflow:hidden` it is
 clamped to the box. Headroom therefore comes from real geometry (children's
-bounding rects) and is reported in millimetres. Headroom is only measured where
-there is a `.slide-body`; cover, statement and divider slides fill their canvas
-by design, so measuring them returns a misleading 0mm and masks the genuinely
-tight slide. Overflow is still checked on all of them.
+bounding rects) and is reported in millimetres by `headroomMM()`, which reports
+nothing rather than a misleading figure in three cases:
+
+- No `.slide-body`: cover, statement and divider slides fill their canvas by
+  design, so measuring them returns 0mm and masks the genuinely tight slide.
+- **Out-of-flow children only.** A running head and a page number pinned to the
+  card edges are chrome, not content. One document reported a constant "9mm spare"
+  on all fifteen pages — the gap between its page number and the paper edge.
+- **Content flush with the box edge.** A cover's flex spacer, a full-bleed panel or
+  a full-height wrapper ends flush however little text it holds, so the card claims
+  0mm and is named the tightest in the document. The threshold is 0.5mm; the
+  tightest card that genuinely flows text in any test document leaves 17mm.
+
+Overflow is still checked on every card in all three cases. A warning that is
+always on is a warning nobody reads, which is the whole point of withholding these.
 
 Hidden slides report zero size, so the sweep needs `scroll-mode` on the body.
 `withAllVisible()` saves and restores the selection range and scroll position
@@ -329,24 +374,24 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
 upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
 
-**First job: two untested documents from a new design system.** A second document
-skill now exists, for a different brand, with its own typefaces and palette and no
-relation to the Switch templates. Its first two outputs — one paged A4 document
-(~372KB, ~35 `.page`) and one 16:9 deck (~363KB, ~44 `.slide`) — are waiting to be
-tested against the editor. Both are self-contained and carry one script each. The
-paths are in this project's memory, not here, because this repo is public.
+**The second design system has now been tested** (20 Aug 2026, four of its
+documents plus three Switch ones as a regression set) and it found five bugs, all
+written up in `SNAGS.md`. The largest — the preview rendering the source file's own
+line wrapping — had been in every document since the beginning and was only visible
+because that family writes its paragraphs across several lines. The next new family
+is still the most valuable test available; see "Next session" in `SNAGS.md` for what
+was and wasn't covered.
 
-Two things to check rather than assume:
+Three things worth remembering:
 
-- Whether their cards carry `.page-body`/`.slide-body`. `looksLikeCards()` needs one
-  of those, or several overflow-clipping cards, before it treats a document as paged
-  — so overflow warnings may not engage at all.
-- That the fidelity pill reads sensibly for typefaces the editor does not bundle.
-  Both documents embed their fonts, so nothing should fail, but this is the first
-  real document family whose fonts the editor could not lend if they did.
-
-Then two things worth remembering:
-
+- **Verify user input as a user, not with `execCommand`.** Scripted `execCommand`
+  raises no `beforeinput`, so it walks straight past `guardInput` and can corrupt an
+  element that a real keystroke could never touch. Type with real keys, or dispatch
+  a cancelable `beforeinput` and assert `defaultPrevented`. Note also that a browser
+  automation harness may deliver character input to the preview iframe but not
+  BackSpace or shortcut chords — check a keystroke lands before concluding anything
+  from it, and remember a background tab has a zero-size viewport, which makes a
+  self-scaling deck render blank and every layout figure meaningless.
 - **The editor and `switch-documents` are one contract**, and both are at v1.3 as of
   20 Aug 2026 (shipped to org settings, Drive refreshed). If you change how the
   review block is written or read, SKILL.md step 6 changes with it — and only a

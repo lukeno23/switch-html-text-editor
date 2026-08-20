@@ -824,12 +824,6 @@ const $ = (id) => document.getElementById(id);
 const frame = $('frame');
 
 const CAN_SAVE_IN_PLACE = 'showOpenFilePicker' in window;
-const PLAINTEXT_OK = (() => {
-  const d = document.createElement('div');
-  d.setAttribute('contenteditable', 'plaintext-only');
-  return d.contentEditable === 'plaintext-only';
-})();
-
 const cap = $('capability');
 if (CAN_SAVE_IN_PLACE) {
   cap.className = 'note ok';
@@ -1075,7 +1069,25 @@ function wireElement(el, { snapshot = true } = {}) {
 
   nodes.forEach((n, i) => nodeToRun.set(n, runs[i]));
   if (snapshot) snapshots.set(id, el.innerHTML);
-  el.setAttribute('contenteditable', PLAINTEXT_OK ? 'plaintext-only' : 'true');
+  /*
+   * "true", not "plaintext-only", and the difference is fidelity rather than
+   * safety. Chrome gives plaintext-only a UA `white-space: pre-wrap` that no
+   * author rule can override — not an inline style, not !important — so every
+   * line break and indent in the *source file* starts rendering as a real line
+   * break the moment an element becomes editable. A paragraph written across
+   * four wrapped lines in the HTML then shows in the preview as four lines with
+   * a hanging indent, and prints as one. It affected a third of the editable
+   * elements in every document tested, and overflow was being measured against
+   * that inflated text, so the preview was neither what prints nor what the PDF
+   * check would say.
+   *
+   * Nothing is lost by dropping it: every input type that "true" additionally
+   * permits — insertParagraph, insertLineBreak, formatBold, insertFromDrop — is
+   * absent from SAFE_INPUT and refused by guardInput, and paste is forced back
+   * to plain text below. The mode was always browser-dependent anyway; browsers
+   * without plaintext-only already ran on "true".
+   */
+  el.setAttribute('contenteditable', 'true');
   el.spellcheck = true;
   return nodes.length;
 }
@@ -1109,6 +1121,7 @@ async function wire(doc) {
   doc.addEventListener('scroll', hideCommentAffordances, true);
   doc.addEventListener('beforeinput', guardInput, true);
   doc.addEventListener('input', onInput, true);
+  doc.addEventListener('paste', pastePlainText, true);
   /*
    * Documents can bind their own keyboard shortcuts on window — the Switch
    * presentation template advances a slide on Space, ArrowRight and PageDown.
@@ -1176,6 +1189,36 @@ function guardInput(e) {
       return;
     }
   }
+}
+
+/*
+ * Paste as plain text. contenteditable="true" would otherwise drop the source
+ * markup of whatever was copied into the document — the integrity net would
+ * catch it and undo the paste, but pasting a sentence from a browser or from
+ * Word is an ordinary thing to do and it should simply work. Insert through
+ * execCommand so the browser keeps its own undo stack intact.
+ */
+function pastePlainText(e) {
+  if (!e.target?.closest?.('[data-hep][contenteditable]')) return;
+  const text = e.clipboardData?.getData('text/plain');
+  e.preventDefault();
+  if (!text) return;
+
+  /*
+   * The same check guardInput makes, repeated here because execCommand does not
+   * raise beforeinput — the guard never sees this edit, so it has to be made
+   * again rather than assumed.
+   */
+  const doc = e.target.ownerDocument;
+  const sel = doc.getSelection();
+  const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+  if (!r || r.startContainer !== r.endContainer || !nodeToRun.has(r.startContainer)) {
+    toast('That paste would change the document structure, so it was blocked.', true);
+    return;
+  }
+
+  // Newlines cannot be represented in a single text run, so they become spaces.
+  doc.execCommand('insertText', false, text.replace(/\s*\n\s*/g, ' '));
 }
 
 function onInput(e) {
@@ -1439,19 +1482,84 @@ function scheduleLayout() {
  * appears live. generate-pdf.py will therefore agree with what's on screen.
  */
 
+/*
+ * Headroom in millimetres, or null when the card's own layout makes the figure
+ * meaningless. Headroom needs real geometry: with overflow:hidden, scrollHeight
+ * is clamped to the box, so it can never tell us how much room is left.
+ *
+ * Two shapes report a misleading zero, and both turned up in the first document
+ * family from outside the pair this was built against:
+ *
+ *  - Chrome pinned to the card edge — a running head, a page number. It is
+ *    absolutely positioned, so it is not content flowing down the page, yet its
+ *    bottom is what the measurement finds. One real document reported a constant
+ *    "9mm spare" on all fifteen pages: the gap between its page number and the
+ *    paper edge, identical however much text the page carried.
+ *  - A child stretched to fill the card by design — a cover's flex spacer, a
+ *    full-bleed colour panel. It ends flush with the box whatever it holds, so
+ *    the card reports 0mm and is named the tightest in the document while in
+ *    truth nothing about it can ever overflow.
+ *
+ * Excluding both is the judgement already made for cover and divider slides:
+ * report spare room only where the answer changes when somebody types. Overflow
+ * is still checked on every card either way.
+ */
+function headroomMM(box, kids) {
+  const flowing = kids.filter((k) => {
+    const pos = getComputedStyle(k).position;
+    return pos === 'static' || pos === 'relative';
+  });
+  const rect = box.getBoundingClientRect();
+  if (!flowing.length || !rect.height) return null;
+  const used = Math.max(...flowing.map((k) => k.getBoundingClientRect().bottom)) - rect.top;
+  const mm = (rect.height - used) / MM;
+  // Flush against the edge means stretched to fill, not one keystroke from
+  // spilling: the tightest card that genuinely flows text leaves 17mm.
+  return mm < 0.5 ? null : mm;
+}
+
+/*
+ * A card carrying a .page-body content box is measured exactly as the template's
+ * own script measures it, so the editor and generate-pdf.py agree. A card
+ * without one has no such contract, and watching only the card edge notices a
+ * spill late: on one real document the text box stops 16mm short of the paper,
+ * so two extra lines collide with the page number while the editor still says
+ * the page fits — and that document's own overflow check fails the build.
+ *
+ * So also check the boxes holding the card's text — but only those whose height
+ * is fixed by their own layout, which here means positioned against both the top
+ * and the bottom of the card. A block with auto height grows with its text and
+ * can never clip it, and asking it anyway produces nonsense: a heading with
+ * tight line-height reports its scrollHeight a few pixels past its clientHeight
+ * because the letters paint outside the box, which flagged every cover in the
+ * test set as overflowing.
+ */
+function textBoxSpill(card) {
+  let worst = 0;
+  const seen = new Set();
+  for (const el of card.querySelectorAll('[data-hep]')) {
+    for (let n = el; n && n !== card; n = n.parentElement) {
+      if (seen.has(n)) break;
+      seen.add(n);
+      if (n.classList.contains('bleed')) continue;
+      const cs = getComputedStyle(n);
+      if (cs.position !== 'absolute' || cs.top === 'auto' || cs.bottom === 'auto') continue;
+      worst = Math.max(worst, n.scrollHeight - n.clientHeight);
+    }
+  }
+  return worst;
+}
+
 // A4 documents: measure the .page-body content box.
 function measurePage(page) {
-  const target = page.querySelector('.page-body') || page;
-  const spill = target.scrollHeight - target.clientHeight;
+  const body = page.querySelector('.page-body');
+  const target = body || page;
+  const spill = body
+    ? body.scrollHeight - body.clientHeight
+    : Math.max(page.scrollHeight - page.clientHeight, textBoxSpill(page));
   if (spill > 1) return { spill };
 
-  // Headroom needs real geometry: with overflow:hidden, scrollHeight is clamped
-  // to the box, so it can never tell us how much room is left.
-  const box = target.getBoundingClientRect();
-  const kids = [...target.children];
-  if (!kids.length || !box.height) return { spill: 0, mm: null };
-  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - box.top;
-  return { spill: 0, mm: (box.height - used) / MM };
+  return { spill: 0, mm: headroomMM(target, [...target.children]) };
 }
 
 // 16:9 slides: the deck checks both axes on the .slide itself, and ignores
@@ -1472,11 +1580,8 @@ function measureSlide(slide) {
    */
   const body = slide.querySelector('.slide-body');
   if (!body) return { spill: 0, mm: null };
-  const rect = body.getBoundingClientRect();
   const kids = [...body.children].filter((k) => !k.classList.contains('bleed'));
-  if (!kids.length || !rect.height) return { spill: 0, mm: null };
-  const used = Math.max(...kids.map((k) => k.getBoundingClientRect().bottom)) - rect.top;
-  return { spill: 0, mm: (rect.height - used) / MM };
+  return { spill: 0, mm: headroomMM(body, kids) };
 }
 
 /*
@@ -1928,7 +2033,38 @@ function installHighlightStyle(doc) {
 
 /* Find the range a comment refers to, preferring the candidate whose
  * surrounding text matches the context captured when it was made. */
+/*
+ * A text node as a reader sees it — every run of whitespace collapsed to one
+ * space — with the map back to raw offsets so a match can still be turned into
+ * a Range.
+ *
+ * A quote is captured from the selection, which reports text as rendered, while
+ * the node holds whatever the source file wrapped and indented. On a document
+ * whose paragraphs are written across several lines the two differ, so matching
+ * them literally found nothing and every comment came back stale. Comparing
+ * them collapsed is what was always meant, and it survives Claude rewrapping a
+ * paragraph while rewriting the document — which literal matching would not.
+ */
+function collapseWhitespace(data) {
+  let text = '';
+  const at = [];
+  let prevSpace = false;
+  for (let i = 0; i < data.length; i++) {
+    const space = /\s/.test(data[i]);
+    if (space && prevSpace) continue;
+    text += space ? ' ' : data[i];
+    at.push(i);
+    prevSpace = space;
+  }
+  return { text, at };
+}
+
 function findRange(doc, c) {
+  const quote = c.quote.replace(/\s+/g, ' ').trim();
+  if (!quote) return null;
+  const before = (c.before || '').replace(/\s+/g, ' ');
+  const after = (c.after || '').replace(/\s+/g, ' ');
+
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   const candidates = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -1941,28 +2077,29 @@ function findRange(doc, c) {
      */
     const host = n.parentElement?.closest('[data-hep]');
     const el = host ? Number(host.getAttribute('data-hep')) : undefined;
+    const { text, at } = collapseWhitespace(n.data);
     let from = 0;
     for (;;) {
-      const at = n.data.indexOf(c.quote, from);
-      if (at === -1) break;
-      candidates.push({ node: n, at, el });
-      from = at + 1;
+      const i = text.indexOf(quote, from);
+      if (i === -1) break;
+      candidates.push({ node: n, el, text, i, start: at[i], end: at[i + quote.length - 1] + 1 });
+      from = i + 1;
     }
   }
   if (candidates.length === 0) return null;
 
   const score = (cand) => {
-    const b = cand.node.data.slice(Math.max(0, cand.at - 24), cand.at);
-    const a = cand.node.data.slice(cand.at + c.quote.length, cand.at + c.quote.length + 24);
-    return (c.before && b.endsWith(c.before) ? 2 : 0)
-      + (c.after && a.startsWith(c.after) ? 2 : 0)
+    const b = cand.text.slice(Math.max(0, cand.i - 24), cand.i);
+    const a = cand.text.slice(cand.i + quote.length, cand.i + quote.length + 24);
+    return (before && b.endsWith(before) ? 2 : 0)
+      + (after && a.startsWith(after) ? 2 : 0)
       + (c.el !== undefined && cand.el === c.el ? 3 : 0);
   };
   const best = candidates.reduce((x, y) => (score(y) > score(x) ? y : x), candidates[0]);
 
   const r = doc.createRange();
-  r.setStart(best.node, best.at);
-  r.setEnd(best.node, best.at + c.quote.length);
+  r.setStart(best.node, best.start);
+  r.setEnd(best.node, best.end);
   return r;
 }
 
@@ -2548,7 +2685,6 @@ window.__hep = {
   state: () => ({
     fileName,
     canSaveInPlace: CAN_SAVE_IN_PLACE,
-    plaintextOnly: PLAINTEXT_OK,
     editableRuns: scan ? scan.editable.length : 0,
     mappedNodes: scan
       ? [...frame.contentDocument.querySelectorAll('[data-hep][contenteditable]')]

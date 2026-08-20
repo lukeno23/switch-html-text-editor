@@ -4,6 +4,87 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### The preview rendered every wrapped paragraph with the source's line breaks
+*Found and fixed 20 Aug 2026, by testing two documents from a new design system —
+and it turned out to affect every document, including the ones the editor was
+built against.*
+
+Chrome gives `contenteditable="plaintext-only"` a UA `white-space: pre-wrap` that
+no author rule can override — not an inline style, not `!important`. So the moment
+an element became editable, the *source file's* own line breaks and indentation
+started rendering as real line breaks. A paragraph written across four wrapped
+lines in the HTML appeared in the preview as four short lines with a hanging
+indent, and printed as one flowing paragraph.
+
+It was invisible for months because the templates the editor grew up with write
+each paragraph on a single line. Measured across the test set: **31 of 141**
+editable elements on the new deck rendered differently from the printed page, 70
+of 184 on its A4 companion, and 184 of 806 on an existing Switch document. The
+overflow figures were being measured against that inflated text too, so the pill
+was answering a question about a document nobody would ever print.
+
+Elements are now made editable with `contenteditable="true"`, which renders
+faithfully. Nothing is lost: every input type that `true` additionally permits —
+`insertParagraph`, `insertLineBreak`, `formatBold`, `insertFromDrop`, `insertHTML`,
+list commands — is absent from `SAFE_INPUT` and refused by `guardInput`, which was
+verified by dispatching each one. Paste is forced back to plain text by a handler
+that repeats the guard's range check, because `execCommand` does not raise
+`beforeinput` and the guard would never see it. All seven test documents now
+render identically with and without editing wired up.
+
+### Every comment came back stale on documents whose paragraphs wrap in the source
+*Found and fixed 20 Aug 2026, immediately after the fix above.*
+
+A quote is captured with `Selection.toString()`, which reports text **as rendered**
+— runs of whitespace collapsed to one space. `findRange()` searched the text nodes'
+raw data, which holds whatever the source wrapped and indented. The two only
+matched while the `plaintext-only` quirk was rendering the source's line breaks;
+with the preview rendering correctly, two of three test comments could not be found
+on reopening and came back permanently flagged stale.
+
+Matching is now whitespace-insensitive on both sides: `collapseWhitespace()` builds
+the collapsed text of each node plus a map back to raw offsets, so a match still
+produces an exact Range. This is what should have been there from the start — it
+also survives Claude rewrapping a paragraph while rewriting the document, which
+literal matching never could.
+
+### "0mm spare" on any card whose content is laid out to fill it
+*Found and fixed 20 Aug 2026.* A cover's flex spacer, a full-bleed colour panel, a
+full-height `.stack` wrapper: each ends flush with its content box however little
+text it holds. The headroom measurement found their bottom edge, reported 0mm, and
+named that card the tightest in the document. Both new documents opened on "tightest
+is p1, 0mm spare" when the genuinely tightest page had 45mm to spare — a warning
+that is always on is a warning nobody reads.
+
+`headroomMM()` now ignores children that are out of flow, and returns null rather
+than a figure when the content sits flush against the box edge. That is the same
+judgement already made for cover and divider slides. Overflow is still checked on
+every card regardless.
+
+### Headroom measured page furniture on a document with no `.page-body`
+*Found and fixed 20 Aug 2026.* One of the new documents lays its pages out with
+absolutely positioned `.rh`, `.body` and `.pn` boxes and no `.page-body`. The
+measurement fell back to the page itself, found the page number pinned 8mm from the
+paper edge, and reported "9mm spare" on all fifteen pages — the same number whatever
+the page held. Out-of-flow children are now excluded, so the document reports
+"15 pages fit" and claims nothing it cannot measure.
+
+### Overflow was noticed two lines late on cards with no `.page-body`
+*Found and fixed 20 Aug 2026.* Same document. Its text box stops 16mm short of the
+paper edge, and the editor was watching only the page edge, so text could overrun
+its column and collide with the page number while the editor still said the page
+fit — 135px past the document's own threshold, which fails that document's build.
+
+Cards that carry a `.page-body` are still measured exactly as their template's own
+script measures them, so the editor and `generate-pdf.py` continue to agree. Cards
+without one now also check the boxes holding their text, but only those whose height
+is fixed by being positioned against both top and bottom: a block with auto height
+grows with its text and can never clip it. That restriction is load-bearing — asking
+auto-height blocks produced a spill of a few pixels on every heading with tight
+line-height, because the letters paint outside the box, and briefly flagged every
+cover in the test set as overflowing. The editor now flags the page at the same
+point the document's own check does.
+
 ### Documents referencing fonts by relative path rendered in a fallback typeface
 *Fixed 19 Aug 2026.* Four of ten test documents reference the kit fonts as
 `url('../../Switch Design System/fonts/…')`. The preview is built from the file's
@@ -208,13 +289,26 @@ guess wrong, so it is deliberately left to the user to remove or redo.
 
 ## Next session
 
-**Test the two documents from the new second design system first.** They are the
-first files the engine has seen from a template family with different typefaces and
-a different palette, produced by a separate document skill. Check whether their
-`.page`/`.slide` cards carry `.page-body`/`.slide-body` — `looksLikeCards()` needs
-one of those before overflow warnings engage — and confirm the fidelity pill reads
-sensibly for typefaces the editor cannot lend. Paths are in this project's memory,
-since this repo is public. Every previous new document family has surfaced a bug.
+**The second design system has been tested** (20 Aug 2026): four documents from it
+— a paged A4, a 16:9 deck, a fifteen-page playbook laid out differently again, and
+a short flowing report — plus three Switch documents as a regression set. Five bugs
+came out of it, all listed under Fixed above, and the biggest one had been present
+in every document since the beginning. What was checked and what held:
+
+- Both card shapes are detected correctly. The A4 and the deck carry
+  `.page-body`/`.slide-body`; the playbook carries neither and is recognised by its
+  overflow-clipping cards instead.
+- All four are self-contained, so nothing is substituted and the fidelity pill stays
+  quiet. **The "typeface the editor cannot lend" path is therefore still untested** —
+  its two typefaces, which the editor does not bundle and could not lend, would be
+  the first case if a document of theirs ever arrived without its fonts embedded.
+- Editing, comments (create, save, reopen, re-anchor, highlight), deletion of a table
+  row and of a section, and byte-identical saves were all verified on the new family.
+- `unverifiedElements` is 0 on all four: neither script writes text into the page, so
+  there is no equivalent of the Switch deck's slide counter.
+
+Next time, the useful thing is again **a document family nobody has opened here
+before**, not more tests on these.
 
 ## Proposed upgrades
 
