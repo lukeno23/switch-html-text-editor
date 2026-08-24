@@ -4,6 +4,20 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### The fixture test assumed a document nobody had reviewed yet
+*Found and fixed 24 Aug 2026, by testing a document that had already been through
+the editor.* The real-document test asserts "write a review block, clear it, and
+the file comes back byte-for-byte". A file that has been reviewed already carries a
+block of its own, so clearing every comment correctly returns the original *minus*
+that block, and the test failed on a document where nothing was wrong.
+
+The engine was right throughout — rewriting the file's own eight comments
+reproduced it exactly. The test now compares against the document with no block of
+its own, and additionally asserts that round trip, which is the property that
+matters when someone reopens a reviewed document and saves it again. This is the
+same trap the house rules already warn about: assert on what the document actually
+carries, not on what the first fixtures happened to look like.
+
 ### The preview rendered every wrapped paragraph with the source's line breaks
 *Found and fixed 20 Aug 2026, by testing two documents from a new design system —
 and it turned out to affect every document, including the ones the editor was
@@ -333,6 +347,17 @@ collapsible panel sections.
    Chromium engine. If `frame.contentWindow.print()` matches its output, wording
    changes stop needing Claude or the toolchain. Compare against real
    `generate-pdf.py` output before promising anything.
+
+   **This got more valuable on 24 Aug.** A delivered PDF came back with visibly
+   uneven letter spacing — "offers" set as "of fers", a hundred times over — while
+   the HTML was perfect. Chromium had snapped every glyph to a whole device pixel,
+   which happens with font hinting on and depends on the host's font stack: absent
+   on macOS, present in the Linux sandbox where the PDF was generated. The fix is
+   `--font-render-hinting=none` on the browser launch. Printing from the editor
+   would run on the user's own machine and sidestep the sandbox altogether, so the
+   spike now buys fidelity as well as a shorter round trip. Diagnosing it needs no
+   special tooling: decompress the PDF's content streams and look at the glyph
+   offsets — whole numbers mean snapped, fractional means correct.
 4. **`showDirectoryPicker()` for the assets a logo substitute can't cover.** Fonts
    and Switch logos are now lent from the editor's own bundle, which covers every
    broken asset in the ten test documents. A granted folder plus

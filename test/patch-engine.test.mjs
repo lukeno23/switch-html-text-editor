@@ -371,6 +371,21 @@ test('real document: review block leaves every run and all markup alone', { skip
   const comments = [{ id: 1, page: 3, quote: 'Fix comms', note: 'expand -- properly' }];
   const out = writeReview(src, comments);
 
+  /*
+   * A document that has been through the editor already carries a review block
+   * of its own, so "clear every comment and get the original back" is the wrong
+   * question to ask of it — the answer is the original *minus* that block. The
+   * equivalent check for such a file is that rewriting its own comments
+   * reproduces it byte for byte, which is the property that actually matters
+   * when someone reopens a reviewed document and saves it again.
+   */
+  const own = readReview(src);
+  const bare = own.length ? writeReview(src, []) : src;
+  if (own.length) {
+    assert.equal(writeReview(src, own), src,
+      'rewriting a file\'s own comments must reproduce it exactly');
+  }
+
   const a = scanDocument(src);
   const b = scanDocument(out);
   assert.deepEqual(b.editable.map((r) => r.text), a.editable.map((r) => r.text));
@@ -381,8 +396,10 @@ test('real document: review block leaves every run and all markup alone', { skip
     return m + s.source.slice(cur);
   };
   // Everything outside the text runs is identical once the block is removed.
-  assert.equal(markup(scanDocument(writeReview(out, []))), markup(a));
-  assert.equal(writeReview(out, []), src, 'clearing comments must restore the original exactly');
+  // Compared against the document with no block of its own, since on a file that
+  // has already been reviewed the block is itself part of the markup.
+  assert.equal(markup(scanDocument(writeReview(out, []))), markup(scanDocument(bare)));
+  assert.equal(writeReview(out, []), bare, 'clearing comments must restore the original exactly');
 
   // Whatever the document carries outside its text runs must come through
   // untouched — build markers and embedded font blobs included, where present.
