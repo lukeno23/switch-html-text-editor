@@ -301,28 +301,52 @@ kept, marked in the panel, and left unhighlighted. It is never silently dropped.
 Re-anchoring it to the replacement text would need a similarity match that could
 guess wrong, so it is deliberately left to the user to remove or redo.
 
+**Measured on a real reviewed document, 24 Aug 2026:** 3 of 8 comments had gone
+stale, and every one of the three was stale *because Claude had addressed it* — it
+reworded the quoted sentence, or hyperlinked part of it, which splits the quote
+across two text nodes so it can no longer sit in one. So the most common way a
+comment gets resolved is also the most reliable way to break its anchor. It does
+little harm today, since those threads are answered and their notes and responses
+survive intact, but it matters for any feature that wants to point back at text
+Claude has already changed — for example, showing the user what was done.
+
+### Headroom is withheld on a page filled to within half a millimetre
+`headroomMM()` treats content flush with the box edge (under 0.5mm) as stretched to
+fill by design and reports no figure, which is what stops covers and full-bleed
+panels claiming to be the tightest page. The cost is that a page *genuinely* filled
+that close would drop out of the "tightest" figure too. The closest real page seen
+so far left 2mm, so it hasn't happened, and overflow still fires the instant text
+spills. Detecting stretch directly — rather than inferring it from flushness — would
+remove the ambiguity if it ever misleads anyone.
+
 ## Next session
 
-**The second design system has been tested** (20 Aug 2026): four documents from it
-— a paged A4, a 16:9 deck, a fifteen-page playbook laid out differently again, and
-a short flowing report — plus three Switch documents as a regression set. Five bugs
-came out of it, all listed under Fixed above, and the biggest one had been present
-in every document since the beginning. What was checked and what held:
+**State as of 23 Sep 2026:** the last behaviour change is `d7e540e`, the test suite is
+green against every fixture on disk, and both document skills are at v1.4 in org
+settings. Nothing is mid-flight.
 
-- Both card shapes are detected correctly. The A4 and the deck carry
-  `.page-body`/`.slide-body`; the playbook carries neither and is recognised by its
-  overflow-clipping cards instead.
-- All four are self-contained, so nothing is substituted and the fidelity pill stays
-  quiet. **The "typeface the editor cannot lend" path is therefore still untested** —
-  its two typefaces, which the editor does not bundle and could not lend, would be
-  the first case if a document of theirs ever arrived without its fonts embedded.
-- Editing, comments (create, save, reopen, re-anchor, highlight), deletion of a table
-  row and of a section, and byte-identical saves were all verified on the new family.
-- `unverifiedElements` is 0 on all four: neither script writes text into the page, so
-  there is no equivalent of the Switch deck's slide counter.
+What the second design system's testing covered (20 Aug, four documents; 24 Aug,
+two more including one already reviewed):
 
-Next time, the useful thing is again **a document family nobody has opened here
-before**, not more tests on these.
+- Both card shapes are detected correctly. Its A4 and deck carry
+  `.page-body`/`.slide-body`; an older playbook carries neither and is recognised by
+  its overflow-clipping cards instead.
+- Editing, comments (create, save, reopen, re-anchor, highlight, Claude's answers
+  read back), deletion of a table row and of a section, and byte-identical saves
+  were all verified on the new family.
+- `unverifiedElements` is 0 on all six: neither of its scripts writes text into the
+  page, so there is no equivalent of the Switch deck's slide counter.
+
+What is **still untested**:
+
+- **A typeface the editor cannot lend.** Every document from that family embeds its
+  fonts, so nothing ever failed to load. Its two typefaces, which the editor does
+  not bundle, would be the first real case if one arrived without them.
+- **A third design system.** Every new family has found a bug; that is still the most
+  valuable test there is.
+
+Before building a feature on comments, read the stale-anchor entry under Open: the
+anchors of comments Claude has addressed usually don't survive.
 
 ## Proposed upgrades
 
@@ -380,13 +404,21 @@ thing that can close the gap, which is asking Claude to re-flow the pages.
 Flowing documents, which have no page cards, reflow normally — so this is a
 property of the template, not a limitation of the editor.
 
-### Headroom is not measured on cover, statement or divider slides
-Those slides have no `.slide-body`; they compose content to fill the whole
-canvas. Measuring them returns 0mm, which is technically true, useless as a
-warning, and actively harmful — it made every deck report "0mm spare" and masked
-the genuinely tight content slide. They are excluded from the headroom figure on
-purpose. Overflow is still checked on every slide, which is the part that
-determines whether the PDF clips.
+### Headroom is not reported where the figure can't mean anything
+Three cases, all deliberate:
+
+- **Slides with no `.slide-body`** — cover, statement and divider slides compose
+  content to fill the whole canvas. Measuring them returns 0mm, which is true,
+  useless, and harmful: it made every deck report "0mm spare" and masked the
+  genuinely tight content slide.
+- **Cards whose only children are out of flow** — a running head and a page number
+  pinned to the card edges are chrome. Measuring them gave one document a constant
+  "9mm spare" on all fifteen pages.
+- **Content flush with the box edge** — a flex spacer or full-height wrapper ends
+  flush however little it holds, and named covers "tightest".
+
+Overflow is still checked on every card in every case, which is the part that
+decides whether the PDF clips. A warning that is always on is one nobody reads.
 
 ### Structural and style editing
 Blocked deliberately. This tool changes words without touching formatting;

@@ -1,7 +1,9 @@
 # Switch HTML Text Editor — working notes
 
 Context for picking this up later. `README.md` is user-facing; this file is for
-whoever develops it next. `SNAGS.md` is the backlog.
+whoever develops it next. `SNAGS.md` is the backlog and the record of *why* each
+fix was needed. `CHANGELOG.md` is the dated log of what shipped in which commit —
+add an entry with every push.
 
 Live: https://lukeno23.github.io/switch-html-text-editor/
 Repo: https://github.com/lukeno23/switch-html-text-editor (public)
@@ -61,7 +63,10 @@ whole point of the design.
    text run. It is safe because HTML comments do not render (so the PDF is
    unaffected) and `scanDocument()` skips comments (so it can never become
    editable text). Removing every comment must restore the file byte-for-byte —
-   there is a test for exactly that, on a real document. Do not widen this
+   there is a test for exactly that, on a real document. On a document that has
+   already been reviewed, the block is part of the original, so the equivalent
+   guarantee is that rewriting its own comments reproduces it exactly; the test
+   checks that too, and once failed for assuming the first case. Do not widen this
    exception; if something else needs persisting, it goes in this block.
 
 7. **Deleting a block is the second bounded exception.** `applyEdits` accepts
@@ -286,8 +291,14 @@ nothing rather than a misleading figure in three cases:
   on all fifteen pages — the gap between its page number and the paper edge.
 - **Content flush with the box edge.** A cover's flex spacer, a full-bleed panel or
   a full-height wrapper ends flush however little text it holds, so the card claims
-  0mm and is named the tightest in the document. The threshold is 0.5mm; the
-  tightest card that genuinely flows text in any test document leaves 17mm.
+  0mm and is named the tightest in the document. The threshold is 0.5mm. The
+  margin is thinner than it first looked: the 20 Aug documents never went below
+  17mm, but a real table page on 24 Aug left **2mm**. That is still four times the
+  threshold, but it means a page genuinely filled to within half a millimetre would
+  be reported with no figure rather than as tight — the pill names the next page
+  instead. Overflow still fires the instant it spills, which is what protects the
+  PDF. If this ever misleads someone, detect stretching directly rather than by
+  flushness.
 
 Overflow is still checked on every card in all three cases. A warning that is
 always on is a warning nobody reads, which is the whole point of withholding these.
@@ -320,7 +331,9 @@ npm test
 ```
 
 37 tests. Four of them round-trip a real production document and skip unless you
-point them at one — client documents are never committed:
+point them at one — client documents are never committed. Include at least one
+document that has already been through the editor, with a review block in it;
+that is the shape the first-generation fixtures never had:
 
 ```bash
 HEP_FIXTURE="/path/to/a/document.html" npm test
@@ -344,10 +357,14 @@ on port 8765) — ES modules won't load from `file://`. `window.__hep` exposes
 `deletions()`, `restoreAll()`, `setZoom()` and `build()` so the source↔preview
 correlation can be driven from the console.
 
-Two traps when testing from the console: `load()` starts with a `confirm()` when
+Three traps when testing from the console. `load()` starts with a `confirm()` when
 there are unsaved changes, and an automated context auto-dismisses it so `load()`
-returns early and you silently keep the previous document's state. Reload the
-page between loads. And `__hep.comment()` skips hidden elements, because a hidden
+returns early and you silently keep the previous document's state — reload the
+page between loads, and check `state().fileName` before trusting a result. The
+browser also caches `index.html` hard, so after an edit a plain reload can serve
+the old code and make a working fix look broken; load `index.html?v=N` with a new
+`N` each time, and confirm the new code is live by searching the page source for a
+name you just added. And `__hep.comment()` skips hidden elements, because a hidden
 slide can't be selected by a real user either. `state().unverifiedElements` should be 0 for
 documents and 1 for decks (the slide counter).
 
@@ -363,6 +380,25 @@ geometric motif, 3px bean-green left-border callouts and `→` arrow bullets.
 match. It and `--caution` are the only non-palette values. `possible-purple`
 carries counts and review annotation, keeping it clear of the main accents.
 
+## When the PDF is wrong but the HTML isn't
+
+Not the editor's fault, but it arrives as an editor complaint, so it belongs here.
+In August a delivered PDF had "offers" set as "of fers", "the" as "t he", about a
+hundred times, while the HTML was perfect. Chromium had snapped every glyph to a
+whole device pixel — font hinting in the Linux sandbox where the skills generate
+PDFs; it never happens on macOS, so it cannot be reproduced from a Mac.
+
+Both skills' `generate-pdf.py` now launch Chromium with `--font-render-hinting=none`
+and check their own output afterwards (skill v1.4). To diagnose by hand: decompress
+the PDF's content streams and read the `Td` offsets between glyphs — whole numbers
+plus one constant means snapped, varied fractions mean correct. Printing from the
+editor would avoid the sandbox entirely, which is part of why that spike is now
+near the top of `SNAGS.md`.
+
+The same investigation found a trap worth knowing: a PDF made in a background
+browser tab, or measured from one, reports a zero-size viewport, so a self-scaling
+deck renders blank and every layout figure is meaningless. Front the tab first.
+
 ## Deploying
 
 Push to `main`; GitHub Pages serves the root. `.nojekyll` stops Jekyll touching
@@ -374,13 +410,15 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
 upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
 
-**The second design system has now been tested** (20 Aug 2026, four of its
-documents plus three Switch ones as a regression set) and it found five bugs, all
-written up in `SNAGS.md`. The largest — the preview rendering the source file's own
-line wrapping — had been in every document since the beginning and was only visible
-because that family writes its paragraphs across several lines. The next new family
-is still the most valuable test available; see "Next session" in `SNAGS.md` for what
-was and wasn't covered.
+**State as of 23 Sep 2026.** The last behaviour change is `d7e540e` (24 Aug);
+everything after it is documentation. The second
+design system has been tested twice — four documents on 20 Aug, which found five
+bugs, and two more on 24 Aug, including one that had already been reviewed, which
+found a test that assumed otherwise. Everything is written up in `SNAGS.md` and
+`CHANGELOG.md`. The largest find — the preview rendering the source file's own line
+wrapping — had been in every document since the beginning and only showed because
+that family writes its paragraphs across several lines. A document family nobody
+has opened here is still the most valuable test available.
 
 Three things worth remembering:
 
@@ -392,11 +430,15 @@ Three things worth remembering:
   BackSpace or shortcut chords — check a keystroke lands before concluding anything
   from it, and remember a background tab has a zero-size viewport, which makes a
   self-scaling deck render blank and every layout figure meaningless.
-- **The editor and `switch-documents` are one contract**, and both are at v1.3 as of
-  20 Aug 2026 (shipped to org settings, Drive refreshed). If you change how the
-  review block is written or read, SKILL.md step 6 changes with it — and only a
-  release gets that to users, costing a five-file version bump plus an org upload.
-  Bundle it with a real change rather than shipping alone.
+- **The editor and the document skills are one contract.** `switch-documents` is at
+  v1.4 as of 24 Aug 2026 (org settings updated; the Drive copies of the kit and
+  Team Guide still need refreshing). A second document skill, for another brand,
+  deliberately shares the editor's conventions — `.page-body`/`.slide-body`,
+  `.bleed`, `.has-overflow` and the `window.__switchLayoutReport` name — so that one
+  editor serves both. If you change how the review block is written or read, SKILL.md
+  step 6 changes with it in **both** skills, and only a release gets that to users:
+  a five-file version bump (the Team Guide carries the version twice) plus an org
+  upload per skill. Bundle it with a real change rather than shipping alone.
 - **Test breadth is what finds bugs here.** Every serious defect so far came from the
   first document in an unfamiliar style, never from more tests on familiar ones. Ask
   for a new file before calling a feature done — a new document family has found a
@@ -408,7 +450,12 @@ Three things worth remembering:
   test fixture paths, or test data strings — that last one has caught me twice.
   `grep -rniE "<clientnames>" $(git ls-files)` before every commit. `.gitignore` blocks `*.html` except `index.html`, plus PDFs
   and Office files.
-- The tool is referenced from `switch-documents` SKILL.md step 5, the packaged
-  `.skill` bundle, the Team Guide and the announcement email. **Changing the
-  deployed URL means updating all four** — the URL derives from the GitHub
-  username and repo name, so don't rename the repo.
+- The tool's URL is referenced from `switch-documents` SKILL.md step 5, the packaged
+  `.skill` bundle, the Team Guide and the announcement email — **and from four files
+  of the second document skill**: its SKILL.md, its `generate-pdf.py`, and both of
+  its templates. **Changing the deployed URL breaks both skills**; it derives from
+  the GitHub username and repo name, so don't rename the repo.
+- **Never name the second brand, its typefaces or its clients here.** Its specifics,
+  paths and document locations live in this project's private memory. The typeface
+  names nearly leaked into `SNAGS.md` once and were caught by the pre-commit grep —
+  add them to the grep, not just the brand name.

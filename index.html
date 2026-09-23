@@ -1514,7 +1514,8 @@ function headroomMM(box, kids) {
   const used = Math.max(...flowing.map((k) => k.getBoundingClientRect().bottom)) - rect.top;
   const mm = (rect.height - used) / MM;
   // Flush against the edge means stretched to fill, not one keystroke from
-  // spilling: the tightest card that genuinely flows text leaves 17mm.
+  // spilling. The tightest card that genuinely flows text seen so far leaves 2mm,
+  // four times this threshold; see CLAUDE.md for what a closer page would do.
   return mm < 0.5 ? null : mm;
 }
 

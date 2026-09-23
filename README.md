@@ -4,7 +4,14 @@ Edit the words in a finished HTML document, in its own live preview, and save
 back to the same file — without changing a single byte of formatting.
 
 Built for the Switch document templates — A4 white papers and 16:9
-presentations — but it works on any self-contained HTML file.
+presentations — but it works on any self-contained HTML file. It has been tested
+against documents from several design systems, including a second document skill
+with its own typefaces, palette and page conventions, and flowing layouts with no
+pages at all.
+
+**What you see is what prints.** The preview renders the file exactly as its PDF
+will — including paragraphs that are wrapped across several lines in the HTML
+source, which earlier versions showed with spurious line breaks.
 
 ## The guarantee
 
@@ -112,18 +119,28 @@ Editing and saving are unaffected either way; only the appearance is. Running
 
 ## Overflow warnings
 
-Both Switch templates use fixed-size cards and **never auto-flow content** — so
+Fixed-page templates use fixed-size cards and **never auto-flow content** — so
 making a paragraph longer doesn't push text to the next page, it clips it,
 silently, in the generated PDF.
 
 The editor re-runs the same measurement each template's own script uses, after
 every keystroke, and reuses the template's `.has-overflow` class so the red
-warning banner the design system already draws appears live. It reports how much
-spare room the tightest page or slide has, in millimetres, and does a full sweep
-of every card — including hidden slides — before saving, asking for confirmation
-if anything overflows.
+warning banner the design system already draws appears live. Pages laid out
+without a `.page-body` content box get an extra check on their fixed-height text
+columns, so text is flagged when it overruns its column — not only once it reaches
+the paper edge. A full sweep of every card, hidden slides included, runs before
+saving and asks for confirmation if anything overflows.
 
-After saving, regenerate the PDF as usual with `generate-pdf.py`.
+It also reports how much spare room the tightest page or slide has, in
+millimetres — but only where that figure means something. Covers and full-bleed
+panels are left out because they fill the page by design and would always read
+"0mm", hiding the page that is genuinely tight; so are pages built entirely from
+absolutely positioned boxes, where the measurement would find the page number
+rather than the text.
+
+After saving, regenerate the PDF as usual with `generate-pdf.py`. From skill v1.4 it
+also checks the PDF's letter spacing and warns if it has come out uneven — a fault
+of the PDF step on some machines, never of the HTML.
 
 ## Recent documents
 
@@ -191,8 +208,10 @@ client documents cannot be committed by accident.
 ## Known limitations
 
 - **Text only.** Styling, layout and structure cannot be changed — by design.
-  Pressing Return, pasting formatted content, and anything that would alter the
-  document's structure is blocked. Use a comment for anything structural.
+  Pressing Return, bold and italic shortcuts, dragging text in, and anything else
+  that would alter the document's structure is blocked. Pasting works, but always
+  arrives as plain text, with line breaks turned into spaces. Use a comment for
+  anything structural.
 - **Comments need a selection inside one text node**, so you can't comment across
   an inline boundary like a `<strong>` lead-in and the sentence after it. The
   editor says so when you try, and tells you what to select instead.
@@ -223,7 +242,8 @@ block deletion (exact byte range, refusal without a closing tag, nesting,
 superseding edits), and four round-trip tests against a real production document.
 
 Those four skip unless you point them at one — client documents are never
-committed:
+committed. Run them against several, from different design systems, and include
+one that already has review comments in it:
 
 ```bash
 HEP_FIXTURE="/path/to/a/document.html" npm test
