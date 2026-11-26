@@ -504,7 +504,7 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
 upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
 
-**State as of 26 Nov 2026.** A full re-test found seven bugs (all fixed) and
+**State as of 26 Nov 2026.** Deployed as `0411e91`. A full re-test found seven bugs (all fixed) and
 brought the review panel, the watched-file round trip and find and replace — see
 CHANGELOG and SNAGS. Before that, the last behaviour change was `d7e540e` (24 Aug). The second
 design system has been tested twice — four documents on 20 Aug, which found five

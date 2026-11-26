@@ -14,7 +14,7 @@ another brand, uses the editor too and links to the same URL.
 
 ---
 
-## 26 November 2026 — review panel, safe round trip, find and replace
+## 26 November 2026 — `0411e91` — review panel, safe round trip, find and replace
 
 A full re-test against 44 real documents (node) and 12 in the browser — including a
 new client family and hand-built pages — found seven bugs. All fixed, along with the
