@@ -36,7 +36,10 @@ whole point of the design.
    `·` — so an encoded-only comparison concludes the run changed and rewrites
    bytes nobody touched. That shipped briefly and a real document caught it: 30
    footer runs would have been rewritten by a no-op save. Don't "normalise" text
-   on the way through, and don't remove either check.
+   on the way through, and don't remove either check. The same goes for the
+   review block: `save()` only calls `writeReview()` when `reviewDirty()`, because
+   Claude writes the block on one line with `json.dumps` and rewriting it in the
+   editor's layout on every save is a change nobody asked for.
 
 3. **Only render-verified nodes become editable.** `wireElement()` compares the
    rendered text node against the scanned source run and refuses the element if
@@ -54,7 +57,9 @@ whole point of the design.
    `restoreLogos()` rewrites `img src` on it. Saving always builds from the
    pristine `scan.source`. Assert `data-hep`, `contenteditable`, `spellcheck`,
    `hep-highlight-style`, `hep-font-substitutes` and `data-hep-logo-substitute`
-   are absent from any saved output.
+   are absent from any saved output. Comment, edit, find and flash highlights are
+   all CSS Custom Highlights — no DOM at all — and their styles, plus the dashed
+   focus outline on the block being edited, live in `hep-highlight-style`.
 
 6. **Exactly one region outside the text runs may be written: the review block.**
    This is the single, deliberate exception to invariant 2. It is bounded — one
@@ -111,6 +116,16 @@ rewrite its entity spelling; leaving it alone does not, which is invariant 2.
 Comments let the user flag text for Claude instead of fixing it themselves, which
 covers everything editing can't: restructuring, tone, claims to check.
 
+- **Quotes are matched per BLOCK, not per text node** (since 26 Nov).
+  `blockOf()` groups text nodes by their nearest block (`p`, `li`, `td`, a heading,
+  a `div`…; SVG labels by their `<text>`), `blockTextOf()` builds each block's
+  collapsed text with a map back to (node, offset), and `findRange()` searches those,
+  so a quote can cross `<strong>` and still become an exact Range. Matching per node
+  meant a triple-clicked paragraph that opened in bold — house style — could never
+  be commented on. `quotable()` clamps a triple-click (which reaches into the next
+  block) to the block holding selected text, and refuses only a genuine multi-block
+  selection. Old comments still resolve: their node-local context is a suffix of
+  the block-level context.
 - **`findRange()` walks every text node under `<body>`.** It must not filter by
   structure: requiring a `.page`/`.slide` ancestor meant comments on flowing
   documents were written to the file and came back permanently stale. Scoring on
@@ -187,6 +202,34 @@ Other rules worth keeping:
 
 ## Editing safety
 
+**`reconcile(host)` is the single place edits are recorded** (since 26 Nov). On
+every input it reads every run under the edited element back from scratch, because
+the browser does not always edit a text node in place: select all of one and type,
+and Chrome replaces it; delete all of one, and Chrome removes it — and the
+`<strong>` holding it — outright. Before this, the first was refused as a structural
+change and the second went unrecorded (blank on screen, still in the file). Rules:
+
+- A **new** text node is adopted into a run whose node has gone only if it sits in
+  that run's own element, or in a freshly recreated element of the same tag (`b`
+  counts for `strong`, `i` for `em`; Chrome may wrap it in `<font>`/`<span style>`,
+  which is render-only). Anything else new — or runs out of source order
+  (`runsInOrder()`) — restores the element. `knownNodes` (every node present at
+  wire time) is how "new" is decided; `restore()` adds what it puts back.
+- A run whose node is gone is recorded as `''`. The file then holds
+  `<strong></strong>`, which renders as nothing — matching the screen.
+- NBSPs the browser inserts to keep a space visible become ordinary spaces again
+  unless the run already contained NBSPs. Without that, deleting a bold lead-in
+  rewrote the next run's leading space as `&nbsp;`.
+- `subtreeRuns` (element id → every run beneath it) exists because the input event
+  names the outermost editing host, and the runs of a removed `<strong>` can't be
+  found from the DOM any more.
+
+`clampToSoleRun()` lets the guard accept a selection that only *looks* wider than
+one run (a triple-click), re-issuing the edit via `execCommand` on the clamped range
+so the undo stack survives. `refillable()` lets typing into an emptied element
+through, for `reconcile()` to adopt. Typing over bold *and* plain text together is
+still refused — there is no right answer for which run gets the text.
+
 `contenteditable="true"` sits on the *parent element* (no DOM change), with two
 layers under it:
 
@@ -219,6 +262,45 @@ Document keybindings are contained by stopping `keydown`/`keypress`/`keyup`
 propagation while the caret is in editable text, without `preventDefault` so the
 character still inserts. The presentation template binds Space, ArrowRight and
 PageDown on `window`; without this, typing a space advances the slide.
+
+## The round trip with Claude
+
+The point of the tool is: comment → Claude edits the file → come back. So the file
+is watched (`checkDisk()`, every 2s while visible and on focus) and `save()` checks
+it too (`changedOnDisk()`, comparing size, mtime and finally the text against
+`baseline`). Before this, saving from a tab left open silently overwrote Claude's
+work.
+
+- Nothing unsaved → `reloadFromDisk(false)` quietly, keeping the view.
+- Unsaved work → a banner; on request `reloadFromDisk(true)` carries it across.
+  Edits are re-applied by the text they replaced (`was`), at the same ordinal among
+  identical runs, through the normal `reconcile()` path; edits whose text Claude
+  changed go to `lostEdits` and are listed under Changes, never guessed. New
+  (unsaved) comments are appended; pending deletions are reported, not re-applied.
+- `save()` never writes over a changed file. It shows the same banner instead.
+- "Copy brief for Claude" saves first, because the brief says the comments are in
+  the file.
+
+Every reload of the preview — save, discard, a new version — goes through
+`captureView()`/`restoreView()`, which keeps scroll, zoom, scroll-mode and the
+current slide. `goToSlide()` drives the deck's own `#next`/`#prev` buttons (falling
+back to its arrow keys) so the template's own index and counter stay in step;
+setting `.active` from outside would desync them. Show me, Find and the Checks tab
+all use it via `reveal()`.
+
+## The review panel and find
+
+The panel docks on the right and the stage shrinks (`body.panel-open #stage`), so
+it never covers the document — the old bottom dock hid the deck's slide arrows.
+Under 1000px it floats over instead. `renderAll()` redraws the three tabs, the
+pills and the save state; call it rather than the individual renderers.
+`html, body` use `overflow: clip`, not `hidden`: `scrollIntoView` on a card
+scrolled a `hidden` body sideways and shifted the whole editor.
+
+Find searches every text node but replaces only mapped, editable ones (read-only
+matches are counted). A replacement writes the text node and calls `reconcile()`,
+exactly like typing, so it is listed under Changes and undone there or via the
+toast. With Match case off, `matchCase()` follows the found text's capitalisation.
 
 ## Lending the document our fonts
 
@@ -303,6 +385,11 @@ nothing rather than a misleading figure in three cases:
 Overflow is still checked on every card in all three cases. A warning that is
 always on is a warning nobody reads, which is the whole point of withholding these.
 
+Overflow is reported in the Checks tab. Its header has no `.bar` on purpose any
+more — the old section's missing `.bar` crashed `setTally()` on every overflowing
+document from 20 Aug to 26 Nov. Layout errors are caught inside `wire()` so they can
+never again stop a document being edited.
+
 Hidden slides report zero size, so the sweep needs `scroll-mode` on the body.
 `withAllVisible()` saves and restores the selection range and scroll position
 around that relayout, and everything inside is synchronous so no intermediate
@@ -330,7 +417,7 @@ entry is dropped from the list rather than left to fail again.
 npm test
 ```
 
-37 tests. Four of them round-trip a real production document and skip unless you
+40 tests. Four of them round-trip a real production document and skip unless you
 point them at one — client documents are never committed. Include at least one
 document that has already been through the editor, with a review block in it;
 that is the shape the first-generation fixtures never had:
@@ -354,8 +441,15 @@ carries (`if (src.includes(marker))`), or the suite fails on its own assumptions
 For UI work, serve the folder (`.claude/launch.json` defines the `editor` config
 on port 8765) — ES modules won't load from `file://`. `window.__hep` exposes
 `load()`, `state()`, `type()`, `comment()`, `comments()`, `deleteAt()`,
-`deletions()`, `restoreAll()`, `setZoom()` and `build()` so the source↔preview
-correlation can be driven from the console.
+`deletions()`, `restoreAll()`, `setZoom()`, `build()`, `save()`, `find()`,
+`replaceAll()`, `checkDisk()`, `goToSlide()` and `openPanel()`.
+
+**Testing save in place without a file picker:** the in-app browser has no
+`showOpenFilePicker`, but `navigator.storage.getDirectory()` (OPFS) hands out real
+`FileSystemFileHandle`s. Write the document there, pass `(await h.getFile(), h)` to
+`__hep.load()`, and `save()` exercises the real write path; writing to the same
+handle from the console simulates Claude editing the file. OPFS then holds client
+documents — empty it afterwards.
 
 Three traps when testing from the console. `load()` starts with a `confirm()` when
 there are unsaved changes, and an automated context auto-dismisses it so `load()`
@@ -410,8 +504,9 @@ the JS. Pages takes a minute or two — poll until the build's `commit` matches
 Read `SNAGS.md` first: it holds the agreed upgrade shortlist under "Proposed
 upgrades", the open limitations, and — most usefully — *why* each fixed bug happened.
 
-**State as of 23 Sep 2026.** The last behaviour change is `d7e540e` (24 Aug);
-everything after it is documentation. The second
+**State as of 26 Nov 2026.** A full re-test found seven bugs (all fixed) and
+brought the review panel, the watched-file round trip and find and replace — see
+CHANGELOG and SNAGS. Before that, the last behaviour change was `d7e540e` (24 Aug). The second
 design system has been tested twice — four documents on 20 Aug, which found five
 bugs, and two more on 24 Aug, including one that had already been reviewed, which
 found a test that assumed otherwise. Everything is written up in `SNAGS.md` and
@@ -427,7 +522,8 @@ Three things worth remembering:
   element that a real keystroke could never touch. Type with real keys, or dispatch
   a cancelable `beforeinput` and assert `defaultPrevented`. Note also that a browser
   automation harness may deliver character input to the preview iframe but not
-  BackSpace or shortcut chords — check a keystroke lands before concluding anything
+  BackSpace or shortcut chords (in Nov it delivered BackSpace and ⌘F but not ⌘Z, and
+  sent ⌘\\ with an empty key name) — check a keystroke lands before concluding anything
   from it, and remember a background tab has a zero-size viewport, which makes a
   self-scaling deck render blank and every layout figure meaningless.
 - **The editor and the document skills are one contract.** `switch-documents` is at

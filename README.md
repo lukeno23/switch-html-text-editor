@@ -39,10 +39,40 @@ logo, 22 fixed pages):
 The same holds for presentations. Editing the cover heading of a 13-slide client
 deck changed 1 run and left all 307,763 markup bytes identical.
 
+## Editing
+
+Click any text and type. Select a word, a sentence or a whole paragraph (a
+triple-click) and type over it to replace it; select it and press Delete to empty
+it. Undo works as normal, and every change is listed in the **Review panel** under
+**Changes** — with what it was, what it is now, and an Undo for each one — and
+underlined in green on the page until you save (switch that off in the panel).
+
+**Find and replace** (⌘F) changes a product name, a date or a client's name
+everywhere at once. It searches every piece of text, shows how many matches there
+are, steps through them slide by slide, and replaces only text it can write back
+safely — matches in read-only text are counted and left alone. With **Match case**
+off, a replacement follows the capitalisation of what it replaces ("stockist" →
+"retailer" turns "Stockist" into "Retailer"). **Replace all** can be undone in one
+click.
+
+## The Review panel
+
+The panel docks on the right and the document makes room for it, so it never
+covers the page or a deck's own slide arrows. It has three tabs:
+
+- **Comments** — your notes for Claude, and Claude's replies.
+- **Changes** — every unsaved edit and pending deletion, each with Show and Undo.
+- **Checks** — whether every page or slide still fits, with a Show button that
+  goes straight to the problem, plus anything the preview couldn't load.
+
+The pills in the toolbar open the matching tab. ⌘\ shows and hides the panel.
+
 ## Flagging text for Claude
 
 Editing only solves wording. For anything needing judgement — a claim to check, a
-paragraph to restructure, a tone problem — select the text and click **Comment**.
+paragraph to restructure, a tone problem — select the text and click **Comment**
+(or press ⌘K). A selection can run across bold and plain text, as long as it stays
+within one paragraph. Click highlighted text in the document to jump to its comment.
 
 Comments are stored in the file itself, in one marker-delimited HTML comment
 before `</body>`:
@@ -57,16 +87,23 @@ HTML comments don't render, so the PDF is unaffected and the file stays valid fo
 `make-selfcontained.py` and `generate-pdf.py`. Removing every comment restores the
 file byte-for-byte.
 
-So one file carries both your wording fixes and your notes. Hand it back to Claude
-and ask it to address the comments; **Copy brief for Claude** puts a plain-text
-summary on the clipboard if you'd rather paste the context too.
+So one file carries both your wording fixes and your notes. **Copy brief for
+Claude** saves the file first, then puts a plain-text request on the clipboard to
+paste to Claude.
+
+**Leave the tab open while Claude works.** The editor watches the file. When Claude
+changes it, the page updates by itself, keeping your place. If you have unsaved
+changes at that moment, it asks first, then loads Claude's version and carries your
+edits and new comments across — and lists any edit it couldn't place because Claude
+reworded that same text. It never saves over a newer file: if the file changed
+since you opened it, Save stops and offers the new version instead.
 
 **Claude answers in the file.** Rather than deleting a comment it has dealt with,
 it marks the thread `addressed` (or `declined`) with a note saying what it did — so
 reopening the document shows *"Claude changed this: rewrote the paragraph and added
 the FDA reference"* instead of a silent absence. Answered threads sort below open
-ones, take a calmer highlight, and can be reopened with one click. **Clear
-addressed** tidies them once you've read them.
+ones, take a calmer highlight, and can be reopened with one click. **Clear these**
+tidies them once you've read them, and can be undone.
 
 Commented ranges are highlighted in the preview using the CSS Custom Highlight
 API, which paints arbitrary ranges without touching the DOM — the only technique
@@ -83,7 +120,7 @@ silently dropped.
 Select any text and the actions offer **Delete paragraph** and, where it holds
 more than that one block, **Delete section** — labelled with what it contains, so
 it is never a blind delete. Deletions are pending until you save: the block is
-hidden, listed in the panel, and **Restore** puts it back.
+hidden, listed under **Changes**, and **Restore** puts it back.
 
 The engine removes exactly the element's own bytes and the line break before it,
 nothing else. Anything without an explicit closing tag is refused rather than
@@ -111,7 +148,7 @@ rules keep that safe:
 - the substitute `<style>` goes into the render copy, never the file.
 
 Anything still missing — a cover graphic, a photograph, a non-brand typeface — is
-named in an amber pill in the toolbar, with the detail on hover. Images that aren't
+named in an amber pill in the toolbar and listed under **Checks**. Images that aren't
 recognisably a logo are left alone on purpose; inventing a replacement would
 misrepresent the document.
 Editing and saving are unaffected either way; only the appearance is. Running
@@ -142,6 +179,12 @@ After saving, regenerate the PDF as usual with `generate-pdf.py`. From skill v1.
 also checks the PDF's letter spacing and warns if it has come out uneven — a fault
 of the PDF step on some machines, never of the HTML.
 
+## Saving
+
+⌘S saves into the same file and leaves you exactly where you were — the same
+scroll position, the same slide. The toolbar shows a dot and the tab title a •
+while anything is unsaved.
+
 ## Recent documents
 
 Documents you've opened are listed on the home screen and reopen in a click. The
@@ -151,8 +194,9 @@ left to fail.
 
 ## Zoom and the document title
 
-A4 pages are wider than most laptop windows, so the toolbar has a zoom control
-with a **Fit** button. It uses the CSS `zoom` property, not a `transform`, so the
+A4 pages are wider than most laptop windows, so a page that doesn't fit is scaled
+to the window automatically (and again when the panel opens or closes) until you
+zoom by hand. The toolbar has a zoom control with a **Fit** button. It uses the CSS `zoom` property, not a `transform`, so the
 caret stays where it is drawn and overflow measurement is unaffected. Zoom is
 hidden for presentations, which already scale themselves to the viewport.
 
@@ -212,9 +256,10 @@ client documents cannot be committed by accident.
   that would alter the document's structure is blocked. Pasting works, but always
   arrives as plain text, with line breaks turned into spaces. Use a comment for
   anything structural.
-- **Comments need a selection inside one text node**, so you can't comment across
-  an inline boundary like a `<strong>` lead-in and the sentence after it. The
-  editor says so when you try, and tells you what to select instead.
+- **Comments stay within one paragraph.** A selection spanning several paragraphs
+  can't carry a comment; the editor says so and suggests what to select instead.
+- **Typing over a mix of bold and plain text** is refused — change one part at a
+  time. (Selecting all of one part and typing over it works.)
 - **Logo and SVG text are locked**, so the Switch logotype can't be broken.
 - **Script-generated text is read-only.** Slide counters and page numbers are
   written at runtime, so they have no fixed counterpart in the source. The editor
@@ -234,7 +279,7 @@ scope, is in [SNAGS.md](SNAGS.md).
 npm test
 ```
 
-37 tests covering the entity codec, the scanner (script/style interiors,
+40 tests covering the entity codec, the scanner (script/style interiors,
 quoted-attribute edge cases, comments, SVG, whitespace), instrumentation, edit
 application, overlap rejection, the review block (round-trip, replacement rather
 than stacking, `-->` escaping, unparseable blocks, composition with edits), and
@@ -256,5 +301,6 @@ python3 -m http.server 8765
 ```
 
 `window.__hep` exposes `load()`, `state()`, `type()`, `comment()`, `comments()`,
-`deleteAt()`, `deletions()`, `restoreAll()`, `setZoom()` and `build()` for driving
-the source↔preview correlation from the console.
+`deleteAt()`, `deletions()`, `restoreAll()`, `setZoom()`, `build()`, `save()`,
+`find()`, `replaceAll()`, `checkDisk()`, `goToSlide()` and `openPanel()` for driving
+the editor from the console. See `CLAUDE.md` for how to test saving in place.

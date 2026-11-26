@@ -14,6 +14,58 @@ another brand, uses the editor too and links to the same URL.
 
 ---
 
+## 26 November 2026 — review panel, safe round trip, find and replace
+
+A full re-test against 44 real documents (node) and 12 in the browser — including a
+new client family and hand-built pages — found seven bugs. All fixed, along with the
+UI rework Luke asked for. → SNAGS, the seven entries dated 26 Nov.
+
+**Bugs fixed**
+- **Save overwrote changes made on disk since opening** — typically Claude's. Save
+  now checks the file first and offers the newer version instead.
+- **Selecting a sentence and typing over it was refused** ("altered the document
+  structure"), as was typing over a triple-clicked paragraph.
+- **Deleting all of a run's text didn't save**, and a deleted bold lead-in vanished
+  from the screen but stayed in the file (with its trailing space turned into
+  `&nbsp;`).
+- **The overflow list crashed** whenever anything overflowed (since `44c8549`, 20 Aug):
+  red pill, no list, no Show me, and "the preview could not be prepared" on open
+  and after every save.
+- **Copy brief told Claude comments were in the file before they were saved.**
+- **Every save jumped back to page 1 / slide 1**, and the Saved message was
+  immediately replaced by the load message.
+- **Clearing comments left a stray newline** on pages ending `</script></body>`
+  (engine, `writeReview`).
+- Smaller: an `&nbsp;`-only spacer was locked as "generated text" (engine,
+  `isWhitespaceOnly` now uses HTML's whitespace); a page with no background of its
+  own rendered on the editor's dark green; answered comments whose text Claude had
+  changed were flagged as warnings; an unchanged review block was rewritten in the
+  editor's layout on every save.
+
+**New**
+- **Review panel on the right** with Comments, Changes and Checks tabs. The document
+  shrinks to make room, so the panel no longer covers a deck's slide arrows. Opens by
+  itself when a document arrives with comments or an overflow.
+- **Changes tab:** every unsaved edit as a before/after diff with Show and Undo;
+  pending deletions with Restore; edits underlined on the page (can be switched off).
+- **Watching the file:** when Claude changes it, the page reloads by itself, keeping
+  your place; with unsaved work it asks, then carries edits and new comments across.
+- **Find and replace** (⌘F): match case, whole words, case-following replacement,
+  read-only matches counted, Replace all undoable.
+- **Comments across bold and plain text** within a paragraph, including triple-click.
+  Click highlighted text to open its comment. Show goes to the right slide on decks.
+- **Undo on toasts** for removing and clearing comments and Replace all.
+- Shortcuts ⌘K comment, ⌘F find, ⌘\\ panel, ⌘O open, Esc; automatic fit-to-width;
+  a toolbar that sheds detail rather than overflowing on narrow windows; focus rings
+  and reduced-motion support.
+
+Tested in Luke's own Chrome with a real file from disk: real keys, the write
+permission prompt, Copy brief, and Claude editing the file both with and without
+unsaved work. Tests: 40 (three new for the engine fixes). Real-document tests no longer assume a
+document has more than 40 runs or that a review block uses the editor's layout.
+
+---
+
 ## 23 September 2026 — documentation catch-up
 
 No behaviour changes. One code comment corrected.

@@ -45,11 +45,14 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
   margin: 0;
-  overflow: hidden;
+  /* clip, not hidden: a hidden box can still be scrolled by scrollIntoView, and
+     revealing a comment card once slid the whole editor sideways. */
+  overflow: clip;
   font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   line-height: 1.45;
@@ -107,10 +110,36 @@ html, body {
 @media (max-width: 1000px) {
   #bar .logo, #bar .rule { display: none; }
 }
-@media (max-width: 820px) {
-  #zoom .level { display: none; }
+/* Then the detail in the status pills, the zoom read-out and the secondary
+   buttons, so Save and Review are never pushed off the edge. */
+@media (max-width: 1240px) { .pill .detail { display: none; } }
+@media (max-width: 1060px) {
+  #zoom .level, #zoomFit { display: none; }
+  #bar { gap: 7px; padding: 0 10px; }
+  #bar button:not(.pill) { padding: 6px 10px; }
+}
+@media (max-width: 900px) {
+  #titleToggle, #fidelity { display: none; }
+  #panelToggle .label { display: none; }
+  #bar .name { max-width: 120px; }
+}
+@media (max-width: 720px) {
+  #commentCount, #editCount { display: none; }
 }
 .pill        { color: var(--misty-mint); border-color: var(--rule-on-dark-strong); }
+button.pill  { padding: 3px 10px; font-size: 11.5px; border-radius: 999px; cursor: pointer; }
+button.pill:hover:not(:disabled) { filter: brightness(1.08); }
+button.pill.ok:hover, button.pill.warn:hover, button.pill.bad:hover, button.pill.count:hover { border-color: currentColor; }
+button.pill.ok:hover { background: var(--bean-green); }
+button.pill.warn:hover { background: var(--caution); }
+button.pill.bad:hover { background: var(--alert); }
+button.pill.count:hover { background: var(--possible-purple); }
+#bar .dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--possible-purple); flex: none; }
+#panelToggle { display: flex; align-items: center; gap: 7px; }
+#panelToggle svg { width: 15px; height: 15px; display: block; }
+#panelToggle[aria-expanded="true"] { background: var(--curious-garden); border-color: var(--bean-green); }
+#panelToggle .n { font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 999px; background: var(--possible-purple); color: var(--green-unknown); }
+#panelToggle .n:empty { display: none; }
 .pill.ok     { background: var(--bean-green); color: var(--green-unknown); border-color: var(--bean-green); }
 .pill.warn   { background: var(--caution);    color: #241703; border-color: var(--caution); }
 .pill.bad    { background: var(--alert);      color: var(--white); border-color: var(--alert); }
@@ -156,8 +185,10 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 
 /* -------------------------------------------------------------------- stage */
 
-#stage { position: absolute; inset: 52px 0 0 0; background: var(--green-unknown); }
-#frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
+#stage { position: absolute; inset: 52px 0 0 0; overflow: clip; background: var(--green-unknown); transition: right .2s cubic-bezier(.2, .7, .2, 1); }
+/* White, as a browser would show it: a document that sets no background of its
+   own used to appear on the editor's dark green, unreadable and unlike its PDF. */
+#frame { width: 100%; height: 100%; border: 0; display: block; background: var(--white); }
 
 /* --------------------------------------------------- empty state / dropzone */
 
@@ -350,74 +381,330 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 
 /* -------------------------------------------------------------------- panel */
 
+/*
+ * The review panel docks on the right and the document shrinks to make room, so
+ * it never sits on top of anything — on a bottom dock it used to cover the deck's
+ * own slide navigation. Three tabs: comments for Claude, the user's own changes,
+ * and the layout checks.
+ */
+:root { --panel-w: 384px; }
+
 #panel {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  z-index: 2;
-  background: var(--green-unknown);
-  border-top: 1px solid var(--rule-on-dark);
-  max-height: 38%;
-  overflow: auto;
-  padding: 13px 16px 15px;
-  display: none;
-}
-#panel.show { display: block; }
-
-#panel h2 {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  color: var(--bean-green);
-  margin: 0 0 10px;
-}
-
-#panel ul { list-style: none; margin: 0; padding: 0; }
-#panel li {
+  top: 52px; right: 0; bottom: 0;
+  width: var(--panel-w);
+  z-index: 4;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 7px 0 7px 13px;
-  border-left: 3px solid var(--alert);
-  margin-bottom: 5px;
-  background: rgba(192, 57, 43, 0.1);
+  flex-direction: column;
+  background: #2a3924;
+  border-left: 1px solid var(--rule-on-dark);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform .2s cubic-bezier(.2, .7, .2, 1), visibility 0s linear .2s;
 }
-#panel li:last-child { margin-bottom: 0; }
-#panel .who { font-weight: 700; min-width: 74px; color: var(--misty-mint); }
-#panel .what { color: rgba(237, 244, 237, 0.72); flex: 1; }
-#panel a {
+body.panel-open #panel {
+  transform: none;
+  visibility: visible;
+  transition: transform .2s cubic-bezier(.2, .7, .2, 1);
+}
+body.panel-open #stage { right: var(--panel-w); }
+
+/* Narrow windows: the panel floats over the document instead of squeezing it. */
+@media (max-width: 1000px) {
+  :root { --panel-w: min(384px, 92vw); }
+  body.panel-open #stage { right: 0; }
+  #panel { box-shadow: -14px 0 36px rgba(0, 0, 0, .45); }
+}
+
+#panel .tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 8px 0 10px;
+  border-bottom: 1px solid var(--rule-on-dark);
+  flex: none;
+}
+#panel .tab {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 13px 9px 11px;
+  color: rgba(237, 244, 237, .62);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#panel .tab:hover:not(:disabled) { background: none; color: var(--misty-mint); }
+#panel .tab[aria-selected="true"] { color: var(--misty-mint); border-bottom-color: var(--bean-green); }
+#panel .tab .n {
+  font-size: 10.5px;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--curious-garden);
+  color: var(--misty-mint);
+}
+#panel .tab .n:empty { display: none; }
+#panel .tab .n.attn { background: var(--possible-purple); color: var(--green-unknown); }
+#panel .tab .n.bad  { background: var(--alert); color: var(--white); }
+#panel .tab .n.ok   { background: var(--bean-green); color: var(--green-unknown); }
+#panel .close {
+  margin-left: auto;
+  align-self: center;
+  border: 0;
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 9px;
+  color: rgba(237, 244, 237, .6);
+}
+#panel .close:hover { color: var(--misty-mint); }
+
+#panel .pane { flex: 1; overflow: auto; padding: 14px 14px 22px; display: none; overscroll-behavior: contain; }
+#panel .pane.active { display: block; }
+
+#panel .pane-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+#panel .pane-head .grow { flex: 1; }
+#panel .pane-head button { padding: 5px 11px; font-size: 12px; }
+#panel .lede { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: rgba(237, 244, 237, .62); }
+#panel .group {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--bean-green);
-  cursor: pointer;
-  text-decoration: none;
+  margin: 18px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#panel .group:first-child { margin-top: 0; }
+#panel .group .grow { flex: 1; }
+
+#panel .empty { text-align: center; padding: 34px 14px 20px; color: rgba(237, 244, 237, .6); font-size: 12.5px; line-height: 1.55; }
+#panel .empty strong { display: block; color: var(--misty-mint); font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+#panel .empty kbd, #selActions kbd, .kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--rule-on-dark-strong);
+  color: rgba(237, 244, 237, .8);
+}
+
+/* Cards — one per comment, change, deletion or layout problem. */
+.card {
+  position: relative;
+  background: rgba(237, 244, 237, .045);
+  border: 1px solid var(--rule-on-dark);
+  border-left: 3px solid var(--possible-purple);
+  border-radius: 8px;
+  padding: 10px 12px 9px;
+  margin-bottom: 8px;
+  transition: background .12s, box-shadow .12s;
+}
+.card.clickable { cursor: pointer; }
+.card.clickable:hover { background: rgba(237, 244, 237, .08); }
+.card.focus { box-shadow: 0 0 0 2px var(--possible-purple); }
+.card.done { border-left-color: var(--bean-green); }
+.card.declined { border-left-color: var(--caution); }
+.card.edit { border-left-color: var(--bean-green); }
+.card.deletion, .card.problem { border-left-color: var(--alert); }
+.card.info { border-left-color: var(--caution); }
+.card .meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(237, 244, 237, .55);
+  margin-bottom: 4px;
+}
+.card .loc { font-weight: 700; color: var(--misty-mint); }
+.card .status {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex: none;
+}
+.status.open     { background: var(--possible-purple); color: var(--green-unknown); }
+.status.done     { background: var(--bean-green); color: var(--green-unknown); }
+.status.declined { background: var(--caution); color: #241703; }
+.status.unsaved  { background: transparent; border: 1px dashed var(--rule-on-dark-strong); color: rgba(237, 244, 237, .7); }
+.card .note { font-size: 13px; line-height: 1.5; color: var(--misty-mint); white-space: pre-wrap; overflow-wrap: anywhere; }
+.card .quote {
+  margin-top: 6px;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.45;
+  color: rgba(237, 244, 237, .55);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card .reply {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(165, 200, 105, .1);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--misty-mint);
+}
+.card.declined .reply { background: rgba(201, 130, 31, .12); }
+.card .reply b {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--bean-green);
+  margin-bottom: 2px;
+}
+.card.declined .reply b { color: var(--caution); }
+.card .reply.none { color: rgba(237, 244, 237, .5); font-style: italic; }
+.card .flag { margin-top: 6px; font-size: 11.5px; color: var(--caution); }
+.card .flag.calm { color: rgba(237, 244, 237, .45); }
+.card .actions { display: flex; flex-wrap: wrap; gap: 2px; margin: 7px -6px -3px; }
+.linkbtn {
+  border: 0;
+  padding: 3px 7px;
+  border-radius: 4px;
   font-size: 11.5px;
   font-weight: 500;
-  white-space: nowrap;
+  color: var(--bean-green);
 }
-#panel a:hover { text-decoration: underline; }
+.linkbtn:hover:not(:disabled) { background: rgba(165, 200, 105, .14); border: 0; }
+.linkbtn.quiet { color: rgba(237, 244, 237, .6); }
+.linkbtn.danger:hover:not(:disabled) { background: var(--alert); color: var(--white); }
+
+/* Before/after for an edit: only the part that changed is marked. */
+.diff { font-size: 12.5px; line-height: 1.5; color: rgba(237, 244, 237, .78); overflow-wrap: anywhere; }
+.diff del { background: rgba(192, 57, 43, .32); color: #ffd9d4; text-decoration: line-through; border-radius: 2px; }
+.diff ins { background: rgba(165, 200, 105, .3); color: var(--white); text-decoration: none; border-radius: 2px; }
+.diff .ell { color: rgba(237, 244, 237, .4); }
+
+.switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: rgba(237, 244, 237, .75); cursor: pointer; user-select: none; }
+.switch input { accent-color: var(--bean-green); margin: 0; }
+
+#panel .caveat {
+  margin: 4px 0 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: rgba(237, 244, 237, .62);
+  border-left: 3px solid var(--caution);
+  padding: 5px 0 5px 10px;
+}
+#panel .summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: rgba(165, 200, 105, .1);
+  color: var(--misty-mint);
+  font-size: 12.5px;
+  margin-bottom: 12px;
+}
+#panel .summary.bad { background: rgba(192, 57, 43, .16); }
+#panel .summary .big { font-size: 18px; line-height: 1; }
+
+/* -------------------------------------------------------------- banners/find */
+
+/* A strip under the toolbar for the one thing the user must decide about. */
+#banner {
+  position: absolute;
+  top: 52px; left: 0; right: 0;
+  z-index: 3;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  background: #4a3412;
+  border-bottom: 1px solid var(--caution);
+  color: var(--white);
+  font-size: 12.5px;
+}
+#banner.show { display: flex; }
+#banner .grow { flex: 1; }
+#banner button { padding: 5px 11px; font-size: 12px; }
+body.panel-open #banner { right: var(--panel-w); }
+
+#findbar {
+  position: absolute;
+  top: 62px;
+  right: 16px;
+  z-index: 6;
+  width: 430px;
+  max-width: calc(100vw - 32px);
+  display: none;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  background: var(--green-unknown);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .5);
+}
+#findbar.show { display: grid; }
+body.panel-open #findbar { right: calc(var(--panel-w) + 16px); }
+#findbar input[type="text"] {
+  min-width: 0;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--misty-mint);
+  background: rgba(0, 0, 0, .25);
+  border: 1px solid var(--rule-on-dark-strong);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+#findbar input[type="text"]:focus { outline: none; border-color: var(--bean-green); }
+#findbar button { padding: 5px 9px; font-size: 12px; }
+#findbar .count { font-size: 11.5px; color: rgba(237, 244, 237, .65); min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; }
+#findbar .opts { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: rgba(237, 244, 237, .6); }
+#findbar .opts .grow { flex: 1; }
+#findbar .icon { padding: 5px 8px; min-width: 30px; }
 
 /* -------------------------------------------------------------------- toast */
 
 #toast {
   position: absolute;
-  left: 50%;
-  bottom: 28px;
-  transform: translateX(-50%) translateY(14px);
-  z-index: 5;
-  max-width: 66vw;
+  left: 18px;
+  bottom: 22px;
+  transform: translateY(14px);
+  z-index: 8;
+  max-width: min(560px, calc(100vw - 36px));
+  display: flex;
+  align-items: center;
+  gap: 14px;
   background: var(--green-unknown);
   color: var(--misty-mint);
-  border: 1px solid var(--rule-on-dark);
+  border: 1px solid var(--rule-on-dark-strong);
   border-left: 3px solid var(--bean-green);
-  border-radius: 6px;
-  padding: 11px 18px;
+  border-radius: 8px;
+  padding: 10px 14px 10px 16px;
   font-size: 12.5px;
+  line-height: 1.45;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
   opacity: 0;
   pointer-events: none;
   transition: opacity .16s, transform .16s;
 }
-#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.show { opacity: 1; transform: none; pointer-events: auto; }
 #toast.bad { border-left-color: var(--alert); }
+#toast button { padding: 4px 10px; font-size: 12px; color: var(--bean-green); border-color: var(--bean-green); }
+
+:focus-visible { outline: 2px solid var(--bean-green); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
 
 /* ------------------------------------------------------- title bar (document) */
 
@@ -498,6 +785,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   border-color: var(--possible-purple);
 }
 #commentBtn:hover { filter: brightness(1.05); background: var(--possible-purple); }
+#commentBtn .kbd { border-color: rgba(47, 63, 40, .35); color: rgba(47, 63, 40, .8); margin-left: 4px; }
 
 /* Deleting is destructive, so it wears the alert colour rather than an accent. */
 #selActions .del {
@@ -506,21 +794,6 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   border-color: var(--alert);
 }
 #selActions .del:hover { background: var(--alert); border-color: var(--alert); color: var(--white); }
-
-/* Pending deletions, listed alongside comments. */
-#panel li.deletion {
-  border-left-color: var(--alert);
-  background: rgba(192, 57, 43, 0.1);
-}
-#panel li.deletion .what s { color: rgba(237, 244, 237, .5); }
-#panel .caveat {
-  margin: 8px 0 0;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(237, 244, 237, .6);
-  border-left: 3px solid var(--caution);
-  padding: 5px 0 5px 10px;
-}
 
 /* Shown in the button's place when a selection can't be commented on, so the
    absence of the button is never unexplained. Informational, not clickable. */
@@ -584,102 +857,6 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 #composer .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 9px; }
 #composer .row .spacer { flex: 1; }
 
-/* Commented ranges are painted with the CSS Custom Highlight API — no DOM
-   change at all, which is the only way to highlight without breaking the
-   attributes-only instrumentation rule. */
-#panel .section + .section { margin-top: 14px; }
-
-/* Collapsible sections. The panel caps at 38% of the window and can hold three
-   at once, so each one folds to its header. */
-#panel .bar h2 { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 7px; }
-#panel .bar h2::before {
-  content: '';
-  width: 0; height: 0;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  transition: transform .12s;
-  transform: rotate(90deg);
-  flex: none;
-}
-#panel .section.collapsed .bar h2::before { transform: rotate(0deg); }
-#panel .section.collapsed ul,
-#panel .section.collapsed .caveat { display: none; }
-#panel .bar .tally {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--curious-garden);
-  color: var(--misty-mint);
-}
-
-/* A comment Claude has answered: calmer, with its reply shown beneath. */
-#panel li.comment.done {
-  border-left-color: var(--bean-green);
-  background: rgba(165, 200, 105, 0.08);
-}
-#panel li.comment.done .note { color: rgba(237, 244, 237, .6); }
-#panel li.comment.declined { border-left-color: var(--caution); }
-#panel li.comment .reply {
-  display: block;
-  margin-top: 5px;
-  padding-left: 9px;
-  border-left: 2px solid var(--bean-green);
-  color: var(--misty-mint);
-  font-size: 12.5px;
-}
-#panel li.comment.declined .reply { border-left-color: var(--caution); }
-#panel li.comment .reply b {
-  color: var(--bean-green);
-  font-weight: 700;
-  font-size: 10.5px;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-  display: block;
-  margin-bottom: 2px;
-}
-#panel li.comment.declined .reply b { color: var(--caution); }
-#panel li.comment {
-  border-left-color: var(--possible-purple);
-  background: rgba(210, 190, 255, 0.1);
-  align-items: flex-start;
-}
-#panel li.comment.stale {
-  border-left-color: var(--caution);
-  background: rgba(201, 130, 31, 0.1);
-}
-#panel li.comment .who { min-width: 74px; }
-#panel li.comment .body { flex: 1; }
-#panel li.comment .note { color: var(--misty-mint); }
-#panel li.comment .quoted {
-  display: block;
-  font-size: 11.5px;
-  font-style: italic;
-  color: rgba(237, 244, 237, .55);
-  margin-top: 3px;
-}
-#panel li.comment .flag {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--caution);
-  margin-top: 3px;
-  display: block;
-}
-#panel .actions { display: flex; gap: 10px; align-items: baseline; flex: none; }
-#panel .actions a.remove { color: rgba(237, 244, 237, .55); }
-#panel .actions a.remove:hover { color: var(--alert); }
-#panel .bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px;
-}
-#panel .bar h2 { margin: 0; flex: 1; }
-#panel .bar button { padding: 4px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -702,21 +879,26 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 
   <span class="rule"></span>
   <span class="name empty" id="fname">No document open</span>
-  <span class="pill count" id="editCount" hidden></span>
-  <span class="pill" id="fit" hidden></span>
-  <span class="pill count" id="commentCount" hidden></span>
-  <span class="pill" id="fidelity" hidden></span>
+  <span class="dirty" id="dirtyDot" hidden title="Unsaved changes"></span>
+  <button class="pill count" id="editCount" hidden title="See your changes"></button>
+  <button class="pill" id="fit" hidden title="See the layout checks"></button>
+  <button class="pill count" id="commentCount" hidden title="See the comments"></button>
+  <button class="pill" id="fidelity" hidden></button>
   <span class="spacer"></span>
   <span id="zoom">
-    <button id="zoomOut" title="Zoom out">−</button>
+    <button id="zoomOut" title="Zoom out" aria-label="Zoom out">−</button>
     <span class="level" id="zoomLevel">100%</span>
-    <button id="zoomIn" title="Zoom in">+</button>
+    <button id="zoomIn" title="Zoom in" aria-label="Zoom in">+</button>
     <button id="zoomFit" title="Fit the page width to the window">Fit</button>
   </span>
-  <button id="titleToggle" hidden>Title</button>
-  <button id="revert" disabled>Revert all</button>
-  <button id="open">Open…</button>
-  <button id="save" class="primary" disabled>Save</button>
+  <button id="findToggle" hidden title="Find and replace (⌘F)">Find</button>
+  <button id="titleToggle" hidden title="Edit the document title, shown in the browser tab">Title</button>
+  <button id="open" title="Open a document (⌘O)">Open…</button>
+  <button id="save" class="primary" disabled title="Save into the same file (⌘S)">Save</button>
+  <button id="panelToggle" hidden aria-expanded="false" aria-controls="panel" title="Show or hide the review panel (⌘\)">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M10 2.5v11"/></svg>
+    <span class="label">Review</span> <span class="n" id="panelBadge"></span>
+  </button>
 </div>
 
 <div id="titlebar">
@@ -730,7 +912,7 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
 </div>
 
 <div id="selActions">
-  <button id="commentBtn">Comment</button>
+  <button id="commentBtn" title="Comment for Claude (⌘K)">Comment <span class="kbd">⌘K</span></button>
   <button id="deleteBlockBtn" class="del" hidden></button>
   <button id="deleteSectionBtn" class="del" hidden></button>
 </div>
@@ -754,15 +936,16 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
       deck, a client report, anything built as a single file).</p>
     <ul>
       <li>It appears exactly as it will in the PDF.</li>
-      <li>Click any text and type, or delete a paragraph or section outright. Fonts,
-        colours, layout and logos cannot be changed.</li>
-      <li>Select anything you'd rather Claude handled, and leave a comment on it.</li>
-      <li>Press ⌘S. Your edits and your comments save into the same file.</li>
+      <li>Click any text and type. Select a whole sentence to rewrite it, or delete a
+        paragraph outright. Fonts, colours, layout and logos cannot be changed.</li>
+      <li>Find and replace (⌘F) changes a name or a date everywhere at once.</li>
+      <li>Select anything you'd rather Claude handled and press Comment (⌘K).</li>
+      <li>Press ⌘S. Your edits and comments save into the same file — and the Review
+        panel lists every change before you do.</li>
     </ul>
-    <p class="handoff">Ask Claude to analyse the file and to address your comments (if
-      needed). It reads them, makes the changes, confirms your manual changes, and
-      re-exports the PDF. Open the file again and each comment carries Claude's
-      reply — what it changed, or why it didn't.</p>
+    <p class="handoff">“Copy brief for Claude” saves and copies a request to paste to Claude.
+      Leave this tab open while Claude works: when it changes the file, the page updates
+      by itself — keeping any unsaved edits — and each comment shows Claude's reply.</p>
     <button id="open2" class="on-light">Choose a file…</button>
 
     <div id="recent" hidden>
@@ -774,31 +957,61 @@ button.on-light:hover { background: var(--curious-garden); border-color: var(--c
   </div>
 </div>
 
-<div id="panel">
-  <div class="section" id="commentSection" hidden>
-    <div class="bar">
-      <h2 id="commentTitle">For Claude to review</h2>
-      <button id="copyBrief">Copy brief for Claude</button>
-      <button id="clearAddressed" hidden>Clear addressed</button>
-      <button id="clearComments">Clear all</button>
-    </div>
-    <ul id="commentList"></ul>
-  </div>
-  <div class="section" id="deleteSection" hidden>
-    <div class="bar">
-      <h2 id="deleteTitle">To be deleted when you save</h2>
-      <button id="restoreAll">Restore all</button>
-    </div>
-    <ul id="deleteList"></ul>
-    <p class="caveat" id="deleteCaveat" hidden></p>
-  </div>
-  <div class="section" id="layoutSection" hidden>
-    <h2 id="panelTitle">Layout</h2>
-    <ul id="panelList"></ul>
+<div id="banner" role="alert">
+  <span class="grow" id="bannerText"></span>
+  <button id="bannerReload" class="primary">Load the new version</button>
+  <button id="bannerDismiss">Not now</button>
+</div>
+
+<div id="findbar" role="search" aria-label="Find and replace">
+  <input id="findInput" type="text" placeholder="Find in the document" aria-label="Find" autocomplete="off" spellcheck="false">
+  <span class="count" id="findCount" aria-live="polite"></span>
+  <button id="findPrev" class="icon" title="Previous match (⇧↵)" aria-label="Previous match">↑</button>
+  <button id="findNext" class="icon" title="Next match (↵)" aria-label="Next match">↓</button>
+  <input id="replaceInput" type="text" placeholder="Replace with" aria-label="Replace with" autocomplete="off" spellcheck="true">
+  <button id="replaceOne" title="Replace this match">Replace</button>
+  <button id="replaceAll" title="Replace every editable match">All</button>
+  <button id="findClose" class="icon" title="Close (Esc)" aria-label="Close find">×</button>
+  <div class="opts">
+    <label class="switch"><input type="checkbox" id="findCase"> Match case</label>
+    <label class="switch"><input type="checkbox" id="findWord"> Whole words</label>
+    <span class="grow"></span>
+    <span id="findNote"></span>
   </div>
 </div>
 
-<div id="toast"></div>
+<aside id="panel" aria-label="Review panel">
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-comments" aria-controls="pane-comments" aria-selected="true">Comments <span class="n" id="n-comments"></span></button>
+    <button class="tab" role="tab" id="tab-changes" aria-controls="pane-changes" aria-selected="false">Changes <span class="n" id="n-changes"></span></button>
+    <button class="tab" role="tab" id="tab-checks" aria-controls="pane-checks" aria-selected="false">Checks <span class="n" id="n-checks"></span></button>
+    <button class="close" id="panelClose" title="Hide the panel" aria-label="Hide the panel">×</button>
+  </div>
+
+  <section class="pane active" id="pane-comments" role="tabpanel" aria-labelledby="tab-comments">
+    <div class="pane-head">
+      <button id="copyBrief" class="primary" title="Saves first, then copies a request you can paste to Claude">Copy brief for Claude</button>
+      <span class="grow"></span>
+      <button id="clearComments" class="linkbtn quiet" title="Remove every comment (can be undone)">Clear all</button>
+    </div>
+    <div id="commentList"></div>
+  </section>
+
+  <section class="pane" id="pane-changes" role="tabpanel" aria-labelledby="tab-changes">
+    <div class="pane-head">
+      <label class="switch"><input type="checkbox" id="showEdits" checked> Highlight my edits on the page</label>
+      <span class="grow"></span>
+      <button id="revert" class="linkbtn danger" disabled>Discard all</button>
+    </div>
+    <div id="changeList"></div>
+  </section>
+
+  <section class="pane" id="pane-checks" role="tabpanel" aria-labelledby="tab-checks">
+    <div id="checkList"></div>
+  </section>
+</aside>
+
+<div id="toast" role="status" aria-live="polite"><span id="toastText"></span><button id="toastAction" hidden></button></div>
 
 <script type="module">
 import { scanDocument, instrument, applyEdits, readReview, writeReview, elementRange, runsInside } from './src/patch-engine.js';
@@ -819,6 +1032,18 @@ let pendingSelection = null;  // details of the current preview selection
 let titleRun = null;       // the <title> run, editable via the toolbar
 let zoomFactor = 1;
 let deletions = [];        // blocks pending removal, applied on save
+const runNode = new Map();     // run index -> the text node currently showing it
+let subtreeRuns = new Map();   // editable element id -> every run inside it, in source order
+let knownNodes = new WeakSet(); // nodes present when the preview was wired
+let baseline = null;           // { lastModified, size, text } of the file as last read or written
+let pendingView = null;        // where to put the reader back after the preview reloads
+let pendingCarry = null;       // unsaved work to re-apply after loading a newer version
+let quietReady = false;        // the next reload is our own, so skip the "ready" toast
+let lastReadiness = { matched: 0, skipped: [] };
+let lastFidelity = null;
+let showEdits = true;
+let lostEdits = [];          // edits that couldn't be carried onto a newer version
+let saving = false;
 
 const $ = (id) => document.getElementById(id);
 const frame = $('frame');
@@ -944,14 +1169,25 @@ async function reopenRecent(row) {
 
 /* ------------------------------------------------------------------- toast */
 
+/*
+ * One message at a time, bottom-left of the window — clear of the deck's own
+ * navigation, which sits bottom-centre. An optional action (Undo, Show me) keeps
+ * the message up longer so there is time to use it.
+ */
 let toastTimer;
-function toast(msg, bad = false) {
+function toast(msg, bad = false, action = null) {
   const t = $('toast');
-  t.textContent = msg;
+  $('toastText').textContent = msg;
+  const btn = $('toastAction');
+  btn.hidden = !action;
+  if (action) {
+    btn.textContent = action.label;
+    btn.onclick = () => { t.classList.remove('show'); action.run(); };
+  }
   t.classList.toggle('bad', bad);
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), bad ? 5000 : 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), action ? 9000 : bad ? 6500 : 3200);
 }
 
 /* -------------------------------------------------------------- open a file */
@@ -1001,16 +1237,29 @@ document.addEventListener('drop', async (e) => {
   if (f) load(f, null);
 });
 
-async function load(file, h) {
-  if (dirty() && !confirm('You have unsaved changes. Open a different document anyway?')) return;
+/*
+ * Open a document. `text` lets a caller pass contents it has already read;
+ * `view` puts the reader back where they were; `carry` is unsaved work to
+ * re-apply on top of a newer version of the same file (see reloadFromDisk).
+ */
+async function load(file, h, { text: given = null, view = null, carry = null } = {}) {
+  if (!carry && !view && dirty()
+    && !confirm('You have unsaved changes. Open a different document anyway?')) return;
 
-  const text = await file.text();
+  const text = given ?? await file.text();
+  const sameFile = !!view;
   scan = scanDocument(text);
   handle = h;
   fileName = file.name;
+  baseline = { lastModified: file.lastModified, size: file.size, text };
   edits.clear();
   snapshots.clear();
-  zoomFactor = 1;
+  runNode.clear();
+  if (!sameFile) zoomFactor = 1;
+  pendingView = view;
+  pendingCarry = carry;
+  quietReady = sameFile;
+  if (!carry) lostEdits = [];
 
   // Comments already in the file come back as they were left.
   deletions = [];
@@ -1024,15 +1273,19 @@ async function load(file, h) {
   titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
   $('docTitle').value = titleRun ? titleRun.text : '';
   $('titleToggle').hidden = !titleRun;
-  $('titlebar').classList.remove('show');
+  $('findToggle').hidden = false;
+  $('panelToggle').hidden = false;
+  if (!sameFile) $('titlebar').classList.remove('show');
+  hideBanner();
 
   $('fname').textContent = fileName;
+  $('fname').title = fileName;
   $('fname').classList.remove('empty');
-  $('fidelity').hidden = true;
+  if (!sameFile) $('fidelity').hidden = true;
   drop.classList.add('hidden');
 
   frame.srcdoc = instrument(scan);
-  rememberRecent(h, file.name);
+  if (!sameFile) rememberRecent(h, file.name);
   // wire() runs on the load event below.
 }
 
@@ -1051,6 +1304,11 @@ frame.addEventListener('load', () => {
 
 let runsByElement = new Map();
 
+// HTML's whitespace, which is what decides whether the browser keeps a text node
+// worth matching. JavaScript's \s and trim() also count NBSP, which made a cell
+// holding only &nbsp; disagree with the source and lock its element.
+const HTML_WS = /^[ \t\n\r\f]*$/;
+
 /*
  * Make one element editable, but only if the rendered preview agrees with the
  * source exactly. Any disagreement means the browser's parser did something our
@@ -1067,7 +1325,7 @@ function wireElement(el, { snapshot = true } = {}) {
     return 0;
   }
 
-  nodes.forEach((n, i) => nodeToRun.set(n, runs[i]));
+  nodes.forEach((n, i) => { nodeToRun.set(n, runs[i]); runNode.set(runs[i].index, n); });
   if (snapshot) snapshots.set(id, el.innerHTML);
   /*
    * "true", not "plaintext-only", and the difference is fidelity rather than
@@ -1096,7 +1354,8 @@ async function wire(doc) {
   // Lend the document our brand fonts first: layout and overflow are measured
   // against the rendered type, so this has to happen before any measuring.
   try {
-    reportFidelity(await restoreBrandFonts(doc));
+    lastFidelity = await restoreBrandFonts(doc);
+    reportFidelity(lastFidelity);
   } catch (err) {
     console.warn('Font check failed, continuing without it:', err);
   }
@@ -1107,6 +1366,12 @@ async function wire(doc) {
     runsByElement.get(r.elementId).push(r);
   }
 
+  // Everything present now is the document's own. Anything that appears later
+  // was put there by the browser's editing, and reconcile() has to account for it.
+  knownNodes = new WeakSet();
+  const all = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  for (let n = all.currentNode; n; n = all.nextNode()) knownNodes.add(n);
+
   let matched = 0;
   const skipped = [];
   for (const el of doc.querySelectorAll('[data-hep]')) {
@@ -1114,6 +1379,7 @@ async function wire(doc) {
     if (n) matched += n;
     else skipped.push({ tag: el.tagName.toLowerCase(), id: el.getAttribute('data-hep') });
   }
+  indexSubtrees(doc);
 
   measureMM(doc);
   installHighlightStyle(doc);
@@ -1122,6 +1388,7 @@ async function wire(doc) {
   doc.addEventListener('beforeinput', guardInput, true);
   doc.addEventListener('input', onInput, true);
   doc.addEventListener('paste', pastePlainText, true);
+  doc.addEventListener('click', onPreviewClick);
   /*
    * Documents can bind their own keyboard shortcuts on window — the Switch
    * presentation template advances a slide on Space, ArrowRight and PageDown.
@@ -1134,39 +1401,80 @@ async function wire(doc) {
       if (e.target?.closest?.('[contenteditable]')) e.stopPropagation();
     }, true);
   }
+  // The editor's own shortcuts work with the caret inside the document too.
+  doc.addEventListener('keydown', onShortcut, true);
 
-  doc.addEventListener('keydown', (e) => {
-    // Cmd/Ctrl+S from inside the preview should save the document.
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
-  }, true);
+  if (pendingView) restoreView(doc, pendingView); else { zoomAuto = true; applyZoom(); autoFit(); }
+  pendingView = null;
 
   resolveComments(doc);
-  renderComments();
-  applyZoom();
-  refreshLayout();
-  reportReadiness(matched, skipped);
+  if (pendingCarry) applyCarry(pendingCarry);
+  pendingCarry = null;
+
+  /*
+   * A layout problem must never stop a document being edited. This once threw on
+   * every document with an overflow, and the user was told the preview "could not
+   * be prepared for editing" when only the overflow list had failed to draw.
+   */
+  try { refreshLayout(); } catch (err) { console.error('Layout check failed:', err); }
+  paintEdits();
+  if (findState.open) runFind({ keepIndex: true });
+  lastReadiness = { matched, skipped };
+  renderAll();
+  autoOpenPanel();
+  if (quietReady) quietReady = false;
+  else reportReadiness(matched, skipped);
+}
+
+/*
+ * For every editable element, the runs anywhere inside it in source order. When
+ * the browser edits, the input event names the outermost editable element, and
+ * reconcile() needs every run beneath it — including those of a nested <strong>
+ * that the browser may have removed outright.
+ */
+function indexSubtrees(doc) {
+  subtreeRuns = new Map();
+  for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
+    const list = [];
+    for (const e of [el, ...el.querySelectorAll('[data-hep][contenteditable]')]) {
+      list.push(...(runsByElement.get(Number(e.getAttribute('data-hep'))) || []));
+    }
+    list.sort((a, b) => a.start - b.start);
+    subtreeRuns.set(Number(el.getAttribute('data-hep')), list);
+  }
 }
 
 function textNodesOf(el) {
-  return [...el.childNodes].filter((n) => n.nodeType === 3 && n.data.trim() !== '');
+  return [...el.childNodes].filter((n) => n.nodeType === 3 && !HTML_WS.test(n.data));
+}
+
+// The outermost editable element around a node — the one the browser edits as a whole.
+function editingHost(node) {
+  const start = node?.nodeType === 3 ? node.parentElement : node;
+  let el = start?.closest?.('[data-hep][contenteditable]');
+  for (let up = el?.parentElement?.closest('[data-hep][contenteditable]'); up;
+    up = up.parentElement?.closest('[data-hep][contenteditable]')) el = up;
+  return el || null;
 }
 
 function reportReadiness(matched, skipped) {
   if (skipped.length === 0) {
-    toast(`${matched} editable text blocks ready`);
+    toast(`Ready — ${matched} pieces of text can be edited. Click any text to start.`);
     return;
   }
   // Not an error. The usual cause is text the document's own script writes at
   // runtime — a slide counter, a page number — which has no fixed counterpart in
   // the source and so can never be safely written back.
-  const n = skipped.length;
-  toast(`${matched} text blocks ready · ${n} block${n > 1 ? 's' : ''} left read-only `
-    + `(text the document generates itself, such as a slide counter)`);
+  toast(`Ready — ${matched} pieces of text can be edited. Click any text to start.`);
   console.info('Left read-only because the preview does not match the source:', skipped);
 }
 
 /* ------------------------------------------------------------ edit guarding */
 
+/*
+ * contenteditable="true" permits more than we want — new paragraphs, bold, drag
+ * and drop. Only these pass. Everything else is refused before it happens.
+ */
 const SAFE_INPUT = new Set([
   'insertText', 'insertCompositionText', 'insertReplacementText', 'insertFromPaste',
   'deleteContentBackward', 'deleteContentForward',
@@ -1174,21 +1482,88 @@ const SAFE_INPUT = new Set([
   'deleteByCut', 'historyUndo', 'historyRedo',
 ]);
 
+/*
+ * The part of a range that holds visible text, provided that is all inside ONE
+ * text node we can write back; otherwise null.
+ *
+ * Triple-clicking a paragraph selects from its first character to the start of
+ * the NEXT block. Left alone, typing over that merges the two paragraphs; refused
+ * outright, the most natural way to replace a sentence didn't work at all. Clamped
+ * to the one text node it really covers, it does exactly what the user meant.
+ */
+function clampToSoleRun(r) {
+  const doc = r.startContainer.ownerDocument;
+  let root = r.commonAncestorContainer;
+  if (root.nodeType === 3) root = root.parentNode;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let only = null;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!r.intersectsNode(n)) continue;
+    const s = n === r.startContainer ? r.startOffset : 0;
+    const e = n === r.endContainer ? r.endOffset : n.data.length;
+    if (e <= s || HTML_WS.test(n.data.slice(s, e))) continue;
+    if (only) return null;
+    only = { n, s, e };
+  }
+  if (!only || !nodeToRun.has(only.n)) return null;
+  const c = doc.createRange();
+  c.setStart(only.n, only.s);
+  c.setEnd(only.n, only.e);
+  return c;
+}
+
+// An element holding a run whose text node is gone — emptied, waiting to be retyped.
+function refillable(elx) {
+  const owner = elx.closest('[data-hep]');
+  const host = editingHost(elx);
+  if (!owner || !host) return false;
+  const id = Number(owner.getAttribute('data-hep'));
+  return (subtreeRuns.get(Number(host.getAttribute('data-hep'))) || []).some((r) => {
+    if (r.elementId !== id) return false;
+    const n = runNode.get(r.index);
+    return !(n && n.isConnected && host.contains(n));
+  });
+}
+
 function guardInput(e) {
   if (!SAFE_INPUT.has(e.inputType)) {
     e.preventDefault();
-    toast('Only text can be changed in this document.', true);
+    toast(e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak'
+      ? 'New lines and paragraphs can\'t be added here — the layout is fixed. Ask Claude in a comment.'
+      : 'Only the words can be changed here, not their formatting.', true);
     return;
   }
   // Every affected range must sit inside one text node we know how to write back.
   const ranges = e.getTargetRanges ? e.getTargetRanges() : [];
-  for (const r of ranges) {
-    if (r.startContainer !== r.endContainer || !nodeToRun.has(r.startContainer)) {
-      e.preventDefault();
-      toast('That edit would change the document structure, so it was blocked.', true);
-      return;
-    }
+  const crossing = ranges.some((r) => r.startContainer !== r.endContainer || !nodeToRun.has(r.startContainer));
+  if (!crossing) return;
+  // Typing into an element whose text was deleted entirely: the browser makes a
+  // new text node, and reconcile() adopts it into the emptied run.
+  if (e.inputType.startsWith('insert') && ranges.length
+    && ranges.every((r) => r.collapsed && r.startContainer.nodeType === 1 && refillable(r.startContainer))) return;
+
+  // A selection that only looks wider than one run — see clampToSoleRun().
+  const doc = e.target.ownerDocument;
+  const sel = doc.getSelection();
+  const live = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+  const clamp = live && !live.collapsed && ranges.length <= 1 ? clampToSoleRun(live) : null;
+  const redoable = e.inputType === 'insertText' || e.inputType === 'insertReplacementText'
+    || e.inputType.startsWith('delete');
+  if (clamp && redoable) {
+    e.preventDefault();
+    sel.removeAllRanges();
+    sel.addRange(clamp);
+    // execCommand keeps the browser's undo stack; the input event it raises goes
+    // through reconcile() like any other edit.
+    if (e.inputType.startsWith('insert')) doc.execCommand('insertText', false, e.data ?? '');
+    else doc.execCommand('delete');
+    return;
   }
+
+  e.preventDefault();
+  toast(live && !live.collapsed
+    ? 'That selection mixes text with different formatting, or spans paragraphs — change one part at a time.'
+    : 'That would join two pieces of differently formatted text, so it was blocked.', true);
 }
 
 /*
@@ -1211,39 +1586,123 @@ function pastePlainText(e) {
    */
   const doc = e.target.ownerDocument;
   const sel = doc.getSelection();
-  const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-  if (!r || r.startContainer !== r.endContainer || !nodeToRun.has(r.startContainer)) {
+  let r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+  if (r && !(r.startContainer === r.endContainer && nodeToRun.has(r.startContainer))) {
+    const clamp = !r.collapsed ? clampToSoleRun(r) : null;
+    if (clamp) { sel.removeAllRanges(); sel.addRange(clamp); r = clamp; } else r = null;
+  }
+  if (!r) {
     toast('That paste would change the document structure, so it was blocked.', true);
     return;
   }
-
-  // Newlines cannot be represented in a single text run, so they become spaces.
-  doc.execCommand('insertText', false, text.replace(/\s*\n\s*/g, ' '));
+  // One line: a pasted paragraph break has nowhere to go in a fixed layout.
+  doc.execCommand('insertText', false, text.replace(/\s*[\r\n]+\s*/g, ' '));
 }
 
 function onInput(e) {
-  const el = e.target.closest?.('[data-hep]') || e.target.parentElement?.closest('[data-hep]');
-  if (!el) return;
-  const id = Number(el.getAttribute('data-hep'));
-
-  // Integrity net: if the element's text nodes are no longer the ones we
-  // mapped, an edit slipped past the guard. Restore from snapshot rather than
-  // carry a document we can no longer write back safely.
-  const nodes = textNodesOf(el);
-  if (nodes.some((n) => !nodeToRun.has(n))) {
-    restore(el, id);
-    toast('That change was undone because it altered the document structure.', true);
-    return;
-  }
-
-  for (const n of nodes) {
-    const run = nodeToRun.get(n);
-    if (n.data === run.text) edits.delete(run.index);
-    else edits.set(run.index, n.data);
-  }
-
-  refreshEditCount();
+  const host = editingHost(e.target);
+  if (!host) return;
+  reconcile(host);
+  paintEdits();
+  if (findState.open) runFind({ keepIndex: true });
+  renderAll();
   scheduleLayout();
+}
+
+const SAME_TAG = { b: 'strong', strong: 'b', i: 'em', em: 'i' };
+
+/*
+ * Bring the recorded edits back in line with what an editable element now shows.
+ *
+ * The browser does not always edit a text node in place. Select every character
+ * of one and type, and it removes that node and creates a new one; delete every
+ * character, and it removes the node — and a <strong> that held it — without
+ * replacing them. Both used to go wrong in opposite directions: typing over a
+ * sentence was refused as a structural change, and deleting a bold lead-in left
+ * it gone from the screen but still in the saved file.
+ *
+ * So, from scratch on every input:
+ *   1. A NEW text node standing where a mapped one was removed is adopted into
+ *      that run — provided it sits in the same element, or in a fresh copy of the
+ *      same formatting element the browser recreated. Anything else new is a real
+ *      structural change, and the element is restored.
+ *   2. Every run beneath the element is then read back. A run whose node is gone
+ *      was emptied, and is recorded as such, so the file matches the screen.
+ */
+function reconcile(host) {
+  const id = Number(host.getAttribute('data-hep'));
+  const expected = subtreeRuns.get(id) || runsByElement.get(id) || [];
+  const liveNode = (r) => {
+    const n = runNode.get(r.index);
+    return n && n.isConnected && host.contains(n) ? n : null;
+  };
+
+  const freshText = [];
+  const freshEls = [];
+  const walker = host.ownerDocument.createTreeWalker(host, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (knownNodes.has(n) || nodeToRun.has(n)) continue;
+    if (n.nodeType === 1) { if (n.tagName !== 'BR') freshEls.push(n); }
+    else if (!HTML_WS.test(n.data)) freshText.push(n);
+  }
+
+  if (freshText.length || freshEls.length) {
+    const missing = expected.filter((r) => !liveNode(r));
+    const adopted = [];
+    for (const t of freshText) {
+      const parent = t.parentElement;
+      const tag = parent.tagName.toLowerCase();
+      const recreated = freshEls.includes(parent);
+      const run = missing.find((r) => !adopted.some((a) => a.run === r) && (recreated
+        ? [tag, SAME_TAG[tag]].includes(scan.elements[r.elementId]?.tag)
+        : Number(parent.getAttribute('data-hep')) === r.elementId));
+      if (!run) return restoreStructure(host, id);
+      adopted.push({ node: t, run, parent });
+    }
+    if (freshEls.some((el) => !adopted.some((a) => el === a.parent || el.contains(a.node)))) {
+      return restoreStructure(host, id);
+    }
+    for (const { node, run, parent } of adopted) {
+      nodeToRun.set(node, run);
+      runNode.set(run.index, node);
+      knownNodes.add(node);
+      knownNodes.add(parent);
+    }
+    if (!runsInOrder(host)) return restoreStructure(host, id);
+  }
+
+  for (const r of expected) {
+    const n = liveNode(r);
+    let text = n ? n.data : '';
+    /*
+     * The browser writes a space it needs to keep visible — at the start or end of
+     * a run, or doubled — as a non-breaking space. Nobody typed that, and saved as
+     * &nbsp; it would stop the line breaking there in the PDF, so it goes back to
+     * an ordinary space unless the run already used NBSPs on purpose.
+     */
+    if (!r.text.includes('\u00a0')) text = text.replace(/\u00a0/g, ' ');
+    if (text === r.text) edits.delete(r.index);
+    else edits.set(r.index, text);
+  }
+}
+
+// Within each element, the mapped text nodes must still come in source order.
+function runsInOrder(host) {
+  for (const el of [host, ...host.querySelectorAll('[data-hep][contenteditable]')]) {
+    let last = -1;
+    for (const n of el.childNodes) {
+      const r = n.nodeType === 3 ? nodeToRun.get(n) : null;
+      if (!r) continue;
+      if (r.start < last) return false;
+      last = r.start;
+    }
+  }
+  return true;
+}
+
+function restoreStructure(host, id) {
+  restore(host, id);
+  toast('That change was undone because it would have altered the layout, not just the words.', true);
 }
 
 /*
@@ -1257,9 +1716,7 @@ function restore(el, id) {
   if (html === undefined) return;
 
   // Drop pending edits for this element and everything beneath it.
-  const stale = new Set([id, ...[...el.querySelectorAll('[data-hep]')]
-    .map((d) => Number(d.getAttribute('data-hep')))]);
-  for (const r of scan.editable) if (stale.has(r.elementId)) edits.delete(r.index);
+  for (const r of subtreeRuns.get(id) || runsByElement.get(id) || []) edits.delete(r.index);
 
   el.innerHTML = html;
 
@@ -1267,8 +1724,11 @@ function restore(el, id) {
   // without overwriting their own (still valid) snapshots.
   wireElement(el, { snapshot: false });
   for (const d of el.querySelectorAll('[data-hep]')) wireElement(d, { snapshot: false });
+  const w = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) knownNodes.add(n);
 
-  refreshEditCount();
+  paintEdits();
+  renderAll();
   scheduleLayout();
 }
 
@@ -1434,7 +1894,7 @@ function reportFidelity(r) {
       r.substituted.length ? `${r.substituted.length} brand font${r.substituted.length === 1 ? '' : 's'}` : null,
       r.logosFixed.length ? `the Switch logotype` : null,
     ].filter(Boolean);
-    if (lent.length) {
+    if (lent.length && !quietReady) {
       toast(`This document references its assets by relative path, so the editor `
         + `supplied ${lent.join(' and ')} from its own copies. The file itself is untouched.`);
     }
@@ -1673,14 +2133,17 @@ function sweep(doc) {
   return { ...result, ...c };
 }
 
+let lastLayout = null;
+
 function refreshLayout() {
   const doc = frame.contentDocument;
-  if (!doc || !doc.body) return;
+  if (!doc || !doc.body || !scan) return;
   const fit = $('fit');
 
   measureMM(doc); // re-measured because zoom changes the pixels-per-mm ratio
   const r = sweep(doc);
-  if (!r) { fit.hidden = true; fit.textContent = ''; renderLayoutSection(null); return; }
+  lastLayout = r;
+  if (!r) { fit.hidden = true; fit.textContent = ''; renderChecks(); return; }
 
   const { over, tightest, els, noun, abbr } = r;
   const total = els.length;
@@ -1691,54 +2154,17 @@ function refreshLayout() {
     fit.textContent = `${count(over.length)} overflowing`;
     fit.className = 'pill bad';
   } else if (tightest.n) {
-    fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`
-      + ` · tightest is ${abbr}${tightest.n}, ${Math.max(0, tightest.mm).toFixed(0)}mm spare`;
+    fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`;
+    const detail = el('span', 'detail', ` · tightest is ${abbr}${tightest.n}, ${Math.max(0, tightest.mm).toFixed(0)}mm spare`);
+    fit.append(detail);
+    fit.title = `Tightest is ${noun} ${tightest.n}, with ${Math.max(0, tightest.mm).toFixed(0)}mm to spare — see the layout checks`;
     fit.className = tightest.mm < 8 ? 'pill warn' : 'pill ok';
   } else {
     fit.textContent = `${count(total)} ${total === 1 ? 'fits' : 'fit'}`;
     fit.className = 'pill ok';
   }
 
-  renderLayoutSection(r);
-  refreshSaveState();
-}
-
-function renderLayoutSection(r) {
-  const section = $('layoutSection');
-  const list = $('panelList');
-  list.innerHTML = '';
-
-  if (!r || r.over.length === 0) {
-    section.hidden = true;
-    syncPanel();
-    return;
-  }
-
-  const { over, noun } = r;
-  $('panelTitle').textContent = `Text no longer fits — ${over.length > 1 ? 'these' : 'this'} `
-    + `${noun}${over.length > 1 ? 's' : ''} will be clipped in the PDF`;
-  setTally('layoutSection', `${over.length} ${noun}${over.length === 1 ? '' : 's'}`);
-
-  for (const o of over) {
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="who">${noun[0].toUpperCase()}${noun.slice(1)} ${o.n}</span>`
-      + `<span class="what">overflowing by ${Math.round(o.px)}px — shorten the text`
-      + ` or split the ${noun}</span>`;
-    const a = document.createElement('a');
-    a.textContent = 'Show me';
-    a.onclick = () => o.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    li.append(a);
-    list.append(li);
-  }
-  section.hidden = false;
-  syncPanel();
-}
-
-// The panel is visible when either of its sections has something to say.
-function syncPanel() {
-  const any = !$('layoutSection').hidden || !$('commentSection').hidden
-    || !$('deleteSection').hidden;
-  $('panel').classList.toggle('show', any);
+  renderChecks();
 }
 
 // Authoritative pre-save check: sweeps every card, including hidden slides.
@@ -1916,69 +2342,8 @@ function restoreDeletion(d) {
   refreshLayout();
 }
 
-function renderDeletions() {
-  const section = $('deleteSection');
-  const list = $('deleteList');
-  list.innerHTML = '';
-
-  if (deletions.length === 0) {
-    section.hidden = true;
-    $('deleteCaveat').hidden = true;
-    syncPanel();
-    refreshSaveState();
-    return;
-  }
-
-  $('deleteTitle').textContent = 'To be deleted when you save';
-  setTally('deleteSection', `${deletions.length} block${deletions.length === 1 ? '' : 's'}`);
-
-  for (const d of deletions) {
-    const li = document.createElement('li');
-    li.className = 'deletion';
-
-    const who = document.createElement('span');
-    who.className = 'who';
-    who.textContent = commentWhere(d);
-
-    const what = document.createElement('span');
-    what.className = 'what';
-    const s2 = document.createElement('s');
-    s2.textContent = d.text || `(${d.noun})`;
-    what.append(document.createTextNode(`${d.noun}${d.inside ? ` — ${d.inside}` : ''}: `), s2);
-
-    const actions = document.createElement('span');
-    actions.className = 'actions';
-    const undo = document.createElement('a');
-    undo.textContent = 'Restore';
-    undo.onclick = () => restoreDeletion(d);
-    actions.append(undo);
-
-    li.append(who, what, actions);
-    list.append(li);
-  }
-
-  /*
-   * On fixed-page templates nothing moves up to fill the gap — each page is a
-   * rigid card and content never reflows between pages. Saying so here stops the
-   * result being a surprise, and points at the only thing that can fix it.
-   */
-  const anyPaged = deletions.some((d) => d.kind === 'page' || d.kind === 'slide');
-  const caveat = $('deleteCaveat');
-  caveat.hidden = !anyPaged;
-  if (anyPaged) {
-    caveat.textContent = 'These pages are a fixed size and never reflow, so the space left behind '
-      + 'stays empty — nothing moves up from the next page. Leave a comment asking Claude to re-flow '
-      + 'the pages if you want the gap closed.';
-  }
-
-  section.hidden = false;
-  syncPanel();
-  refreshSaveState();
-}
-
-$('restoreAll').onclick = () => {
-  for (const d of [...deletions]) restoreDeletion(d);
-};
+// Pending deletions are drawn in the Changes tab, alongside text edits.
+function renderDeletions() { renderAll(); }
 
 /* ----------------------------------------------------------------- comments */
 
@@ -2028,83 +2393,132 @@ function installHighlightStyle(doc) {
   st.id = 'hep-highlight-style';
   // Injected into <head> of the render copy only; never saved.
   st.textContent = '::highlight(hep-review){background:#d2beff;color:#2f3f28;}'
-    + '::highlight(hep-review-done){background:#dfe7d4;color:#2f3f28;}';
+    + '::highlight(hep-review-done){background:#dfe7d4;color:#2f3f28;}'
+    // The user's own edits: a green underline, so the page still reads as it prints.
+    + '::highlight(hep-edited){text-decoration:underline 2px #8fb34f;text-underline-offset:3px;background:rgba(165,200,105,.16);}'
+    + '::highlight(hep-find){background:#ffe08a;color:#2f3f28;}'
+    + '::highlight(hep-find-current){background:#f2a93b;color:#1d1400;}'
+    + '::highlight(hep-flash){background:#a5c869;color:#2f3f28;}'
+    // Which block the caret is in, in brand green rather than the browser's ring.
+    + '[data-hep][contenteditable]:focus{outline:1.5px dashed rgba(143,179,79,.75);outline-offset:3px;}';
   doc.head.append(st);
 }
 
-/* Find the range a comment refers to, preferring the candidate whose
- * surrounding text matches the context captured when it was made. */
+/* ---- anchoring a comment to text ---- */
+
 /*
- * A text node as a reader sees it — every run of whitespace collapsed to one
- * space — with the map back to raw offsets so a match can still be turned into
- * a Range.
+ * A comment is anchored by its quoted text, plus ~24 characters of context either
+ * side and the element id as a tie-breaker — never by byte offsets, so it survives
+ * edits elsewhere and survives Claude rewriting the document around it.
  *
- * A quote is captured from the selection, which reports text as rendered, while
- * the node holds whatever the source file wrapped and indented. On a document
- * whose paragraphs are written across several lines the two differ, so matching
- * them literally found nothing and every comment came back stale. Comparing
- * them collapsed is what was always meant, and it survives Claude rewrapping a
- * paragraph while rewriting the document — which literal matching would not.
+ * Quotes are matched within a BLOCK (a paragraph, list item, cell, heading…) as a
+ * reader sees it: the text of every node in it, whitespace collapsed. Matching
+ * per text node meant a selection could never cross bold or italic, and the
+ * templates open most paragraphs with a bold phrase — so the natural way to pick
+ * a paragraph, a triple-click, could not be commented on at all.
+ *
+ * Collapsing matters too: a quote comes from what is rendered, while the nodes
+ * hold whatever the source wrapped and indented. The map back to raw offsets lets
+ * a match still become an exact Range.
  */
-function collapseWhitespace(data) {
-  let text = '';
-  const at = [];
-  let prevSpace = false;
-  for (let i = 0; i < data.length; i++) {
-    const space = /\s/.test(data[i]);
-    if (space && prevSpace) continue;
-    text += space ? ' ' : data[i];
-    at.push(i);
-    prevSpace = space;
-  }
-  return { text, at };
+const BLOCKISH = 'p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, figcaption, dt, dd, pre, caption, label, button, summary';
+const BLOCK_SEL = `${BLOCKISH}, div, section, article, aside, header, footer, figure, main, nav, td, body`;
+const HEADINGS = 'h1, h2, h3, h4, h5, h6';
+
+function blockOf(node) {
+  const el = node.nodeType === 3 ? node.parentElement : node;
+  // Inline SVG labels group by their <text> element, not the whole diagram.
+  return el?.closest('text') || el?.closest(BLOCK_SEL) || el;
 }
 
+function blockTextOf(block) {
+  const doc = block.ownerDocument;
+  const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  let text = '';
+  const map = [];
+  let prevSpace = true; // leading whitespace in a block is not rendered
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (blockOf(n) !== block || n.parentElement.closest('script, style')) continue;
+    if (n.parentElement.closest('[data-hep-deleted]')) continue;
+    const d = n.data;
+    for (let k = 0; k < d.length; k++) {
+      const space = /\s/.test(d[k]);
+      if (space && prevSpace) continue;
+      text += space ? ' ' : d[k];
+      map.push({ node: n, off: k });
+      prevSpace = space;
+    }
+  }
+  return { text, map };
+}
+
+// Index into a block's collapsed text of a boundary point (node, offset).
+function indexAt(map, node, off) {
+  let after = -1;
+  for (let k = 0; k < map.length; k++) {
+    const m = map[k];
+    if (m.node === node) {
+      if (m.off >= off) return k;
+      after = k + 1;
+    } else if (after !== -1) return after;
+  }
+  return after === -1 ? map.length : after;
+}
+
+let blockCache = null;
+function allBlocks(doc) {
+  if (blockCache && blockCache.doc === doc) return blockCache.list;
+  const seen = new Map();
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (HTML_WS.test(n.data) || n.parentElement.closest('script, style')) continue;
+    const b = blockOf(n);
+    if (b && !seen.has(b)) seen.set(b, null);
+  }
+  const list = [...seen.keys()].map((b) => ({ block: b, ...blockTextOf(b) }));
+  blockCache = { doc, list };
+  return list;
+}
+const forgetBlocks = () => { blockCache = null; };
+
 function findRange(doc, c) {
-  const quote = c.quote.replace(/\s+/g, ' ').trim();
+  const quote = (c.quote || '').replace(/\s+/g, ' ').trim();
   if (!quote) return null;
   const before = (c.before || '').replace(/\s+/g, ' ');
   const after = (c.after || '').replace(/\s+/g, ' ');
 
-  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   const candidates = [];
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    /*
-     * Every text node under <body> is a candidate. This used to require a
-     * `.page`/`.slide` ancestor, which meant no comment on a flowing document
-     * ever re-anchored: it was written to the file and came back permanently
-     * stale. Scoring on the quote, its context and the element id does the
-     * disambiguation — a structural filter was never what made it accurate.
-     */
-    const host = n.parentElement?.closest('[data-hep]');
-    const el = host ? Number(host.getAttribute('data-hep')) : undefined;
-    const { text, at } = collapseWhitespace(n.data);
+  for (const b of allBlocks(doc)) {
     let from = 0;
     for (;;) {
-      const i = text.indexOf(quote, from);
-      if (i === -1) break;
-      candidates.push({ node: n, el, text, i, start: at[i], end: at[i + quote.length - 1] + 1 });
-      from = i + 1;
+      const k = b.text.indexOf(quote, from);
+      if (k === -1) break;
+      const start = b.map[k];
+      const host = start.node.parentElement?.closest('[data-hep]');
+      candidates.push({ b, k, start, end: b.map[k + quote.length - 1],
+        el: host ? Number(host.getAttribute('data-hep')) : undefined });
+      from = k + 1;
     }
   }
   if (candidates.length === 0) return null;
 
   const score = (cand) => {
-    const b = cand.text.slice(Math.max(0, cand.i - 24), cand.i);
-    const a = cand.text.slice(cand.i + quote.length, cand.i + quote.length + 24);
-    return (before && b.endsWith(before) ? 2 : 0)
-      + (after && a.startsWith(after) ? 2 : 0)
+    const bt = cand.b.text.slice(Math.max(0, cand.k - 30), cand.k);
+    const at = cand.b.text.slice(cand.k + quote.length, cand.k + quote.length + 30);
+    return (before.trim() && bt.endsWith(before.trimStart()) ? 2 : 0)
+      + (after.trim() && at.startsWith(after.trimEnd()) ? 2 : 0)
       + (c.el !== undefined && cand.el === c.el ? 3 : 0);
   };
   const best = candidates.reduce((x, y) => (score(y) > score(x) ? y : x), candidates[0]);
 
   const r = doc.createRange();
-  r.setStart(best.node, best.start);
-  r.setEnd(best.node, best.end);
+  r.setStart(best.start.node, best.start.off);
+  r.setEnd(best.end.node, best.end.off + 1);
   return r;
 }
 
 function resolveComments(doc) {
+  forgetBlocks();
   for (const c of comments) {
     c.range = findRange(doc, c);
     c.resolved = !!c.range;
@@ -2113,7 +2527,7 @@ function resolveComments(doc) {
 }
 
 function paintHighlights(doc) {
-  if (!CAN_HIGHLIGHT) return;
+  if (!CAN_HIGHLIGHT || !doc) return;
   const win = doc.defaultView;
   const anchored = comments.filter((c) => c.range && c.resolved);
   const open = anchored.filter(isOpen).map((c) => c.range);
@@ -2124,80 +2538,100 @@ function paintHighlights(doc) {
 
 /* ---- capturing a selection ---- */
 
+/*
+ * What a selection can be commented on as: the part of it inside one block, or a
+ * reason it can't. A triple-click reaches into the start of the next block with
+ * nothing selected there, so only blocks holding selected TEXT count.
+ */
+function quotable(r) {
+  const doc = r.startContainer.ownerDocument;
+  let root = r.commonAncestorContainer;
+  if (root.nodeType === 3) root = root.parentNode;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let first = null;
+  let last = null;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!r.intersectsNode(n) || n.parentElement.closest('script, style')) continue;
+    const s = n === r.startContainer ? r.startOffset : 0;
+    const e = n === r.endContainer ? r.endOffset : n.data.length;
+    if (e <= s || HTML_WS.test(n.data.slice(s, e))) continue;
+    if (!first) first = { n, s };
+    last = { n, e };
+  }
+  if (!first) return null;
+  const block = blockOf(first.n);
+  if (blockOf(last.n) !== block) {
+    return { why: {
+      head: 'Select within one paragraph',
+      body: 'This selection spans several. Comment on each paragraph separately, or on the heading above them.',
+    } };
+  }
+  const range = doc.createRange();
+  range.setStart(first.n, first.s);
+  range.setEnd(last.n, last.e);
+  return { range, block };
+}
+
 function onSelectionChange() {
   const doc = frame.contentDocument;
   if (!doc) return;
   const sel = doc.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !sel.toString().trim()) {
     pendingSelection = null;
     hideCommentAffordances();
     return;
   }
 
-  const r = sel.getRangeAt(0);
-  const quote = sel.toString();
-  if (!quote.trim()) { pendingSelection = null; hideCommentAffordances(); return; }
-
-  /*
-   * Fixed-page templates give a comment a page or slide number. Documents that
-   * simply flow — most hand-built HTML — have neither, so the location comes from
-   * the nearest heading above the selection instead. Requiring a .page/.slide
-   * here used to make commenting silently impossible on any flowing document.
-   */
-  /*
-   * Use the same test as the overflow sweep, so a `.page` that is really just a
-   * content-height wrapper doesn't get labelled "Page 1". One source of truth for
-   * "does this document have cards" keeps the labels honest.
-   */
-  const cardInfo = cards(doc);
-  const card = cardInfo
-    ? r.startContainer.parentElement?.closest(cardInfo.kind === 'slide' ? '.slide' : '.page')
-    : null;
-
-  /*
-   * A comment is anchored by its quoted text, so the selection has to sit inside
-   * a single text node. The Switch templates lead paragraphs with
-   * <strong>Bold.</strong> body text, so selections crossing that boundary are
-   * common — say why rather than just withholding the button.
-   */
-  const why = unquotableReason(r);
-  if (why) {
+  const q = quotable(sel.getRangeAt(0));
+  if (!q) { pendingSelection = null; hideCommentAffordances(); return; }
+  if (q.why) {
     // Drop the previous selection too, so a stale one can never be committed.
     pendingSelection = null;
     $('selActions').classList.remove('show');
-    showSelectHint(why, r.getBoundingClientRect());
+    showSelectHint(q.why, sel.getRangeAt(0).getBoundingClientRect());
     return;
   }
   $('selectHint').classList.remove('show');
 
-  const kind = card ? cardInfo.kind : 'section';
-  const all = card ? cardInfo.els : [];
-  const data = r.startContainer.data;
-  const host = r.startContainer.parentElement?.closest('[data-hep]');
+  const { text, map } = blockTextOf(q.block);
+  let a = indexAt(map, q.range.startContainer, q.range.startOffset);
+  let b = indexAt(map, q.range.endContainer, q.range.endOffset);
+  while (a < b && text[a] === ' ') a++;
+  while (b > a && text[b - 1] === ' ') b--;
+  const quote = text.slice(a, b);
+  if (!quote) { pendingSelection = null; hideCommentAffordances(); return; }
+
+  /*
+   * Where a comment says it is: a page or slide number on fixed-card templates,
+   * otherwise the nearest heading above it. Uses the same card test as the
+   * overflow sweep, so nothing is ever labelled "Page 1" on a flowing document.
+   */
+  const cardInfo = cards(doc);
+  const card = cardInfo ? q.block.closest?.(cardInfo.kind === 'slide' ? '.slide' : '.page')
+    || q.range.startContainer.parentElement.closest(cardInfo.kind === 'slide' ? '.slide' : '.page') : null;
+  const host = q.range.startContainer.parentElement?.closest('[data-hep]');
+
   pendingSelection = {
-    kind,
-    page: card ? all.indexOf(card) + 1 : undefined,
-    where: card ? undefined : headingAbove(r.startContainer),
+    kind: card ? cardInfo.kind : 'section',
+    page: card ? cardInfo.els.indexOf(card) + 1 : undefined,
+    where: card ? undefined : headingAbove(q.range.startContainer),
     // Element id narrows the search when the quote is short or repeated. Only a
-    // hint: if Claude restructures the document it is ignored and the quoted
-    // text plus surrounding context does the work.
+    // hint: if Claude restructures the document, the quote and context do the work.
     el: host ? Number(host.getAttribute('data-hep')) : undefined,
     quote,
-    before: data.slice(Math.max(0, r.startOffset - 24), r.startOffset),
-    after: data.slice(r.endOffset, r.endOffset + 24),
-    rect: r.getBoundingClientRect(),
+    before: text.slice(Math.max(0, a - 24), a),
+    after: text.slice(b, b + 24),
+    rect: sel.getRangeAt(0).getBoundingClientRect(),
+    node: q.range.startContainer,
   };
 
   if (!$('composer').classList.contains('show')) {
-    const { block, section, host } = deletionTargets(r.startContainer);
-    offerDeletion($('deleteBlockBtn'), block, host, false);
-    offerDeletion($('deleteSectionBtn'), section, host, true);
+    const { block, section, host: h } = deletionTargets(q.range.startContainer);
+    offerDeletion($('deleteBlockBtn'), block, h, false);
+    offerDeletion($('deleteSectionBtn'), section, h, true);
     positionOver($('selActions'), pendingSelection.rect, true);
   }
 }
-
-const BLOCKISH = 'p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, figcaption, dt, dd';
-const HEADINGS = 'h1, h2, h3, h4, h5, h6';
 
 /*
  * Nearest heading at or above a node, in document order — the location label for
@@ -2207,40 +2641,14 @@ function headingAbove(node) {
   const doc = node.ownerDocument;
   const start = node.nodeType === 3 ? node.parentElement : node;
   const own = start?.closest(HEADINGS);
-  if (own) return own.textContent.trim().slice(0, 80);
+  if (own) return own.textContent.trim().replace(/\s+/g, ' ').slice(0, 80);
 
-  const all = [...doc.querySelectorAll(HEADINGS)];
   let best = null;
-  for (const h of all) {
-    // DOCUMENT_POSITION_PRECEDING means the heading comes before our node.
+  for (const h of doc.querySelectorAll(HEADINGS)) {
     if (start && (h.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING)) best = h;
     else break;
   }
-  return best ? best.textContent.trim().slice(0, 80) : undefined;
-}
-
-
-/*
- * Return null when the selection can carry a comment, otherwise a message
- * explaining what to do instead.
- */
-function unquotableReason(r) {
-  if (r.startContainer === r.endContainer && r.startContainer.nodeType === 3) return null;
-
-  const asEl = (n) => (n.nodeType === 3 ? n.parentElement : n);
-  const startBlock = asEl(r.startContainer)?.closest(BLOCKISH);
-  const endBlock = asEl(r.endContainer)?.closest(BLOCKISH);
-
-  if (startBlock && endBlock && startBlock !== endBlock) {
-    return {
-      head: 'Select within one paragraph',
-      body: 'This selection spans several, so there is no single piece of text to attach a comment to.',
-    };
-  }
-  return {
-    head: 'Select within one run of text',
-    body: 'This selection crosses bold or italic. Comment on the plain part or the bold part separately.',
-  };
+  return best ? best.textContent.trim().replace(/\s+/g, ' ').slice(0, 80) : undefined;
 }
 
 function showSelectHint({ head, body }, rect) {
@@ -2254,11 +2662,9 @@ function showSelectHint({ head, body }, rect) {
 }
 
 /*
- * Place a parent-document element above a rect measured inside the iframe.
- *
- * The element is centred on the selection via translate(-50%), so it has to be
- * clamped to the window or a selection near either edge pushes half of it out of
- * view — which clipped the Comment button once the delete actions were added.
+ * Place a parent-document element above a rect measured inside the iframe,
+ * clamped to the visible stage so a selection near either edge — or under the
+ * review panel — never pushes half of it out of view.
  */
 function positionOver(el, rect, show) {
   const f = frame.getBoundingClientRect();
@@ -2268,9 +2674,9 @@ function positionOver(el, rect, show) {
   const MARGIN = 10;
   const half = el.offsetWidth / 2;
   const wanted = f.left + rect.left + rect.width / 2;
-  const min = MARGIN + half;
-  const max = window.innerWidth - MARGIN - half;
-  el.style.left = `${max < min ? window.innerWidth / 2 : Math.min(max, Math.max(min, wanted))}px`;
+  const min = f.left + MARGIN + half;
+  const max = f.right - MARGIN - half;
+  el.style.left = `${max < min ? (f.left + f.right) / 2 : Math.min(max, Math.max(min, wanted))}px`;
   el.style.top = `${Math.max(f.top + 34, f.top + rect.top - 8)}px`;
 }
 
@@ -2280,14 +2686,17 @@ function hideCommentAffordances() {
 }
 
 $('selActions').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
-$('commentBtn').onclick = () => {
-  if (!pendingSelection) return;
+$('commentBtn').onclick = startComment;
+
+function startComment() {
+  if (!pendingSelection) return false;
   hideCommentAffordances();
   $('composerQuote').textContent = `“${pendingSelection.quote}”`;
   $('composerNote').value = '';
   positionOver($('composer'), pendingSelection.rect, true);
   $('composerNote').focus();
-};
+  return true;
+}
 
 $('composerCancel').onclick = closeComposer;
 function closeComposer() {
@@ -2305,17 +2714,105 @@ $('composerSave').onclick = () => {
   if (!note) { $('composerNote').focus(); return; }
 
   const { kind, page, where, el, quote, before, after } = pendingSelection;
-  comments.push({ id: nextCommentId++, kind, page, where, el, quote, before, after, note });
+  const c = { id: nextCommentId++, kind, page, where, el, quote, before, after, note };
+  comments.push(c);
   sortComments();
 
   closeComposer();
-  const doc = frame.contentDocument;
-  resolveComments(doc);
-  renderComments();
-  toast(`Comment added — ${commentWhere(comments[comments.length - 1])}`);
+  frame.contentDocument?.getSelection()?.removeAllRanges();
+  resolveComments(frame.contentDocument);
+  openPanel('comments');
+  renderAll();
+  focusCard(c.id);
+  toast(`Comment added — ${commentWhere(c)}. Save, then use “Copy brief for Claude”.`);
 };
 
-/* ---- the comments section of the panel ---- */
+/* ---- finding your way to something in the document ---- */
+
+const slideList = (doc) => { const c = cards(doc); return c?.kind === 'slide' ? c.els : null; };
+
+function currentSlide(doc) {
+  const slides = slideList(doc);
+  if (!slides) return 0;
+  return slides.findIndex((s) => s.classList.contains('active')) + 1;
+}
+
+/*
+ * Go to slide n using the deck's own controls, so its script stays in step —
+ * setting classes from outside would leave its counter and arrow keys behind.
+ * Falls back to the arrow keys the templates bind, then to scrolling.
+ */
+function goToSlide(doc, n) {
+  const slides = slideList(doc);
+  if (!slides || !slides[n - 1]) return;
+  let cur = currentSlide(doc);
+  if (!cur || doc.body.classList.contains('scroll-mode')) {
+    slides[n - 1].scrollIntoView({ block: 'center' });
+    return;
+  }
+  const win = doc.defaultView;
+  const step = (dir) => {
+    const btn = doc.getElementById(dir > 0 ? 'next' : 'prev');
+    if (btn) btn.click();
+    else win.dispatchEvent(new win.KeyboardEvent('keydown', { key: dir > 0 ? 'ArrowRight' : 'ArrowLeft', bubbles: true }));
+  };
+  for (let guard = slides.length + 2; cur !== n && guard > 0; guard--) {
+    step(n > cur ? 1 : -1);
+    const now = currentSlide(doc);
+    if (now === cur) break;
+    cur = now;
+  }
+}
+
+// Bring something into view — on its slide, if the document is a deck — and flash it.
+function reveal(target) {
+  const doc = frame.contentDocument;
+  if (!doc || !target) return;
+  const isRange = 'startContainer' in target;
+  const node = isRange ? target.startContainer : target;
+  const el = node.nodeType === 3 ? node.parentElement : node;
+  if (!el?.isConnected) return;
+  const slides = slideList(doc);
+  const slide = slides && el.closest('.slide');
+  if (slide) goToSlide(doc, slides.indexOf(slide) + 1);
+  el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+  // Flash text, not whole slides or pages — those just need bringing into view.
+  if (CAN_HIGHLIGHT && (isRange || node.nodeType === 3)) {
+    const win = doc.defaultView;
+    let r = target;
+    if (!isRange) { r = doc.createRange(); r.selectNodeContents(node); }
+    win.CSS.highlights.set('hep-flash', new win.Highlight(r));
+    clearTimeout(reveal.t);
+    reveal.t = setTimeout(() => win.CSS.highlights.delete('hep-flash'), 1600);
+  }
+}
+
+// Clicking highlighted text in the document opens its comment in the panel.
+function onPreviewClick(e) {
+  const doc = frame.contentDocument;
+  const sel = doc.getSelection();
+  if (sel && !sel.isCollapsed) return;
+  const pos = doc.caretPositionFromPoint
+    ? doc.caretPositionFromPoint(e.clientX, e.clientY)
+    : doc.caretRangeFromPoint?.(e.clientX, e.clientY);
+  if (!pos) return;
+  const node = pos.offsetNode ?? pos.startContainer;
+  const off = pos.offset ?? pos.startOffset;
+  const hit = comments.find((c) => c.range && c.resolved && (() => {
+    try { return c.range.isPointInRange(node, off); } catch { return false; }
+  })());
+  if (hit) { openPanel('comments'); focusCard(hit.id, { scroll: true }); }
+}
+
+function focusCard(id, { scroll = true } = {}) {
+  for (const el of document.querySelectorAll('#commentList .card.focus')) el.classList.remove('focus');
+  const card = document.querySelector(`#commentList .card[data-id="${CSS.escape(String(id))}"]`);
+  if (!card) return;
+  card.classList.add('focus');
+  if (scroll) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+/* ---- the Comments tab ---- */
 
 // How a comment describes its own location, however the document is built.
 function commentWhere(c) {
@@ -2324,180 +2821,172 @@ function commentWhere(c) {
   return c.where || 'In the document';
 }
 
-function renderComments() {
-  const section = $('commentSection');
-  const list = $('commentList');
-  const pill = $('commentCount');
-  list.innerHTML = '';
+const savedCommentIds = () => new Set(JSON.parse(loadedReviewJSON).map((c) => c.id));
 
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function linkBtn(label, run, cls = '') {
+  const b = el('button', `linkbtn ${cls}`.trim(), label);
+  b.onclick = (e) => { e.stopPropagation(); run(); };
+  return b;
+}
+function emptyState(head, body) {
+  const box = el('div', 'empty');
+  box.append(el('strong', '', head));
+  const p = el('div');
+  p.innerHTML = body;
+  box.append(p);
+  return box;
+}
+
+function renderComments() {
+  const list = $('commentList');
+  list.innerHTML = '';
   const open = comments.filter(isOpen);
   const answered = comments.filter((c) => !isOpen(c));
+  const saved = savedCommentIds();
 
-  pill.hidden = comments.length === 0;
-  pill.textContent = answered.length
-    ? `${open.length} open · ${answered.length} answered`
-    : `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
-  $('clearAddressed').hidden = answered.length === 0;
+  $('clearComments').hidden = comments.length === 0;
+  $('copyBrief').disabled = open.length === 0;
+  $('copyBrief').title = open.length
+    ? 'Saves first, then copies a request you can paste to Claude'
+    : 'No open comments to send';
 
   if (comments.length === 0) {
-    section.hidden = true;
-    syncPanel();
-    refreshSaveState();
+    list.append(emptyState('No comments yet',
+      'Select any text in the document and press <b>Comment</b> (<kbd>⌘K</kbd>) to flag it for Claude — '
+      + 'a rewrite, a fact to check, a section to restructure. Bold and plain text can be selected together.'));
     return;
   }
 
-  const stale = comments.filter((c) => !c.resolved).length;
-  $('commentTitle').textContent = open.length
-    ? `For Claude to review${answered.length ? ' — and what came back' : ''}`
-    : 'Answered by Claude';
-  setTally('commentSection', stale
-    ? `${open.length} open · ${stale} not matching`
-    : `${open.length} open`);
-
+  let lastGroup = null;
   for (const c of comments) {
     const answeredNow = !isOpen(c);
-    const li = document.createElement('li');
-    li.className = 'comment'
-      + (c.resolved ? '' : ' stale')
-      + (answeredNow ? (c.status === 'declined' ? ' done declined' : ' done') : '');
-
-    const who = document.createElement('span');
-    who.className = 'who';
-    who.textContent = commentWhere(c);
-    who.title = commentWhere(c);
-
-    const body = document.createElement('span');
-    body.className = 'body';
-    const note = document.createElement('span');
-    note.className = 'note';
-    note.textContent = c.note;
-    const quoted = document.createElement('span');
-    quoted.className = 'quoted';
-    quoted.textContent = `“${c.quote}”`;
-    body.append(note, quoted);
-
-    // Claude's reply, where there is one.
-    if (answeredNow) {
-      const reply = document.createElement('span');
-      reply.className = 'reply';
-      const label = document.createElement('b');
-      label.textContent = c.status === 'declined' ? 'Claude left this' : 'Claude changed this';
-      reply.append(label, document.createTextNode(c.response || '(no note left)'));
-      body.append(reply);
+    const group = answeredNow ? 'Answered by Claude' : 'Open';
+    if (group !== lastGroup) {
+      const g = el('div', 'group');
+      g.append(el('span', 'grow', `${group} · ${answeredNow ? answered.length : open.length}`));
+      if (answeredNow) g.append(linkBtn('Clear these', clearAnswered, 'quiet'));
+      list.append(g);
+      lastGroup = group;
     }
 
-    if (!c.resolved) {
-      const flag = document.createElement('span');
-      flag.className = 'flag';
-      flag.textContent = 'the quoted text has changed — comment kept, but not highlighted';
-      body.append(flag);
-    }
-
-    const actions = document.createElement('span');
-    actions.className = 'actions';
+    const card = el('div', 'card'
+      + (answeredNow ? (c.status === 'declined' ? ' declined' : ' done') : '')
+      + (c.resolved ? ' clickable' : ''));
+    card.dataset.id = c.id;
     if (c.resolved) {
-      const show = document.createElement('a');
-      show.textContent = 'Show me';
-      show.onclick = () => {
-        const el = c.range.startContainer.parentElement;
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      };
-      actions.append(show);
+      card.tabIndex = 0;
+      card.onclick = () => { focusCard(c.id, { scroll: false }); reveal(c.range); };
+      card.onkeydown = (e) => { if (e.key === 'Enter') card.onclick(); };
     }
-    // Reopening puts a thread back on Claude's list without retyping it.
+
+    const meta = el('div', 'meta');
+    meta.append(el('span', 'loc', commentWhere(c)));
+    const status = answeredNow
+      ? el('span', `status ${c.status === 'declined' ? 'declined' : 'done'}`, c.status === 'declined' ? 'Left as is' : 'Done')
+      : saved.has(c.id) ? el('span', 'status open', 'Open') : el('span', 'status unsaved', 'Not saved yet');
+    meta.append(status);
+    card.append(meta, el('div', 'note', c.note), el('div', 'quote', `“${c.quote}”`));
+
     if (answeredNow) {
-      const again = document.createElement('a');
-      again.textContent = 'Reopen';
-      again.onclick = () => {
+      const reply = el('div', `reply${c.response ? '' : ' none'}`);
+      reply.append(el('b', '', c.status === 'declined' ? 'Claude left this' : 'Claude changed this'));
+      reply.append(document.createTextNode(c.response || 'Marked done, without a note.'));
+      card.append(reply);
+    }
+    if (!c.resolved) {
+      // An answered comment's text usually changed BECAUSE Claude dealt with it —
+      // that is not a problem, so say it calmly. An open one is worth flagging.
+      card.append(answeredNow
+        ? el('div', 'flag calm', 'The quoted text has since changed.')
+        : el('div', 'flag', 'This text can no longer be found — it may have been reworded. The comment is kept, but not highlighted.'));
+    }
+
+    const actions = el('div', 'actions');
+    if (c.resolved) actions.append(linkBtn('Show', () => reveal(c.range)));
+    if (answeredNow) {
+      // Reopening puts a thread back on Claude's list without retyping it.
+      actions.append(linkBtn('Reopen', () => {
         delete c.status;
         delete c.response;
         sortComments();
-        renderComments();
         paintHighlights(frame.contentDocument);
-      };
-      actions.append(again);
+        renderAll();
+      }));
     }
-    const del = document.createElement('a');
-    del.className = 'remove';
-    del.textContent = 'Remove';
-    del.onclick = () => {
+    actions.append(linkBtn('Remove', () => {
       comments = comments.filter((x) => x !== c);
       resolveComments(frame.contentDocument);
-      renderComments();
-    };
-    actions.append(del);
-
-    li.append(who, body, actions);
-    list.append(li);
+      renderAll();
+      toast('Comment removed.', false, { label: 'Undo', run: () => {
+        comments.push(c); sortComments(); resolveComments(frame.contentDocument); renderAll();
+      } });
+    }, 'quiet danger'));
+    card.append(actions);
+    list.append(card);
   }
-
-  section.hidden = false;
-  syncPanel();
-  refreshSaveState();
 }
 
-// Small count chip in a section header, so a collapsed section still reports.
-function setTally(sectionId, text) {
-  const bar = $(sectionId).querySelector('.bar');
-  let chip = bar.querySelector('.tally');
-  if (!chip) {
-    chip = document.createElement('span');
-    chip.className = 'tally';
-    bar.querySelector('h2').after(chip);
-  }
-  chip.textContent = text;
-}
-
-// Clicking a section heading folds it. The tally keeps reporting either way.
-for (const id of ['commentSection', 'deleteSection', 'layoutSection']) {
-  const h = $(id).querySelector('h2');
-  h.tabIndex = 0;
-  h.title = 'Click to fold this section';
-  const toggle = () => $(id).classList.toggle('collapsed');
-  h.onclick = toggle;
-  h.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
-}
-
-$('clearAddressed').onclick = () => {
+function clearAnswered() {
   const answered = comments.filter((c) => !isOpen(c));
   if (!answered.length) return;
-  if (!confirm(`Remove ${answered.length} answered comment(s)? The open ones stay.`)) return;
+  const before = [...comments];
   comments = comments.filter(isOpen);
   resolveComments(frame.contentDocument);
-  renderComments();
-};
+  renderAll();
+  toast(`Cleared ${answered.length} answered comment${answered.length === 1 ? '' : 's'}. Save to make it stick.`, false,
+    { label: 'Undo', run: () => { comments = before; resolveComments(frame.contentDocument); renderAll(); } });
+}
 
 $('clearComments').onclick = () => {
   if (!comments.length) return;
-  if (!confirm(`Remove all ${comments.length} comment(s)? Saving afterwards restores the file exactly.`)) return;
+  const before = [...comments];
   comments = [];
   resolveComments(frame.contentDocument);
-  renderComments();
+  renderAll();
+  toast(`Cleared all ${before.length} comments. Saving removes them from the file.`, false,
+    { label: 'Undo', run: () => { comments = before; resolveComments(frame.contentDocument); renderAll(); } });
 };
 
+/*
+ * The brief tells Claude the comments are in the file — so they have to BE in the
+ * file. It used to copy straight away, and a brief pasted before saving pointed
+ * Claude at comments that weren't there yet.
+ */
 $('copyBrief').onclick = async () => {
-  // Only what is still outstanding — an answered thread is not work to redo.
   const open = comments.filter(isOpen);
   if (!open.length) { toast('Nothing outstanding — every comment has been answered.'); return; }
-
+  if (dirty()) {
+    const ok = await save({ quiet: true });
+    if (!ok) { toast('Not copied — the document needs saving first, and that didn’t happen.', true); return; }
+  }
+  const hand = edits.size === 0 && savedEdits > 0
+    ? ['', `I have also edited some text by hand (${savedEdits} change${savedEdits === 1 ? '' : 's'} so far) — please keep those edits.`]
+    : [];
   const lines = [
-    `Open review comments on ${fileName}:`,
+    `Please address the open review comments in ${fileName}${handle ? '' : ' (the copy I just downloaded)'}:`,
     '',
-    ...open.flatMap((c, i) => [
-      `${i + 1}. ${commentWhere(c)} — "${c.quote}"`,
-      `   ${c.note}`,
+    ...open.flatMap((c, n) => [
+      `${n + 1}. ${commentWhere(c)} — "${c.quote}"`,
+      `   ${c.note.replace(/\n/g, '\n   ')}`,
       '',
     ]),
-    'These are also stored in the file itself, in the SWITCH-REVIEW block before',
-    '</body>. Please edit the HTML directly, and for each comment set',
-    '"status": "addressed" with a short "response" saying what you changed —',
-    'rather than deleting it — then re-export the PDF.',
+    'They are stored in the file itself, in the SWITCH-REVIEW block just before',
+    '</body>. Edit the HTML directly. For each comment, set "status" to "addressed"',
+    '(or "declined") and add a short "response" saying what you changed or why not —',
+    'don’t delete the comments. Then re-export the PDF.',
+    ...hand,
   ];
   try {
     await navigator.clipboard.writeText(lines.join('\n'));
-    toast(`Copied a brief for ${open.length} open comment(s)`);
+    toast(`Saved, and copied a brief for ${open.length} comment${open.length === 1 ? '' : 's'} — paste it to Claude. This page updates by itself when Claude changes the file.`);
   } catch {
-    toast('Could not reach the clipboard — the brief is in the console instead.', true);
+    toast('Could not reach the clipboard — the brief is in the browser console instead.', true);
     console.log(lines.join('\n'));
   }
 };
@@ -2548,9 +3037,29 @@ function stepZoom(dir) {
   refreshLayout();
 }
 
-$('zoomIn').onclick = () => stepZoom(1);
-$('zoomOut').onclick = () => stepZoom(-1);
+$('zoomIn').onclick = () => { zoomAuto = false; stepZoom(1); };
+$('zoomOut').onclick = () => { zoomAuto = false; stepZoom(-1); };
+/*
+ * Until the user zooms by hand, a page wider than the space available is fitted
+ * to it — on opening, and when the review panel opens or closes — rather than
+ * left hanging off the side behind a scrollbar.
+ */
+let zoomAuto = true;
+function autoFit() {
+  const doc = frame.contentDocument;
+  if (!zoomAuto || !doc || cards(doc)?.kind !== 'page') return;
+  const pages = [...doc.querySelectorAll('.page')];
+  doc.documentElement.style.zoom = '';
+  const natural = Math.max(...pages.map((c) => c.getBoundingClientRect().width));
+  const fits = natural && natural <= frame.clientWidth - 40;
+  zoomFactor = fits ? 1 : Math.min(1, Math.max(0.4, (frame.clientWidth - 48) / natural));
+  applyZoom();
+  refreshLayout();
+}
+new ResizeObserver(() => { clearTimeout(autoFit.t); autoFit.t = setTimeout(autoFit, 120); }).observe(frame);
+
 $('zoomFit').onclick = () => {
+  zoomAuto = true;
   const doc = frame.contentDocument;
   const cards = [...(doc?.querySelectorAll('.page') || [])];
   if (!cards.length) return;
@@ -2570,116 +3079,808 @@ $('zoomFit').onclick = () => {
 
 /* ------------------------------------------------------------------- saving */
 
-function refreshEditCount() {
-  const c = $('editCount');
-  c.hidden = edits.size === 0;
-  c.textContent = `${edits.size} edit${edits.size === 1 ? '' : 's'}`;
-  c.className = 'pill count';
-  $('revert').disabled = edits.size === 0;
-  refreshSaveState();
-}
+let savedEdits = 0;   // text blocks saved this session, for the brief
 
-function refreshSaveState() {
-  $('save').disabled = !scan || !dirty();
-  $('save').textContent = handle || !scan ? 'Save' : 'Download copy';
+// Everything on screen that depends on edits, comments and deletions.
+function renderAll() {
+  renderComments();
+  renderChanges();
+  renderChecks();
+  paintEdits();
+  refreshUI();
+}
+const refreshEditCount = renderAll;
+const refreshSaveState = refreshUI;
+
+function refreshUI() {
+  const c = $('editCount');
+  const n = edits.size + deletions.length;
+  c.hidden = n === 0;
+  c.textContent = `${n} unsaved change${n === 1 ? '' : 's'}`;
+
+  const open = comments.filter(isOpen).length;
+  const answered = comments.length - open;
+  const pill = $('commentCount');
+  pill.hidden = comments.length === 0;
+  pill.textContent = answered
+    ? `${open} open · ${answered} answered`
+    : `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+
+  $('n-comments').textContent = open || '';
+  $('n-comments').className = 'n attn';
+  $('n-changes').textContent = n || '';
+  const over = lastLayout?.over?.length || 0;
+  $('n-checks').textContent = over || '';
+  $('n-checks').className = `n ${over ? 'bad' : ''}`;
+  $('panelBadge').textContent = open || '';
+
+  const isDirty = !!scan && dirty();
+  $('dirtyDot').hidden = !isDirty;
+  $('save').disabled = !isDirty;
+  $('save').textContent = !scan || handle ? (isDirty || !scan ? 'Save' : 'Saved') : 'Download copy';
+  $('revert').disabled = n === 0;
+  document.title = scan ? `${isDirty ? '• ' : ''}${fileName} — Switch editor` : 'Switch — HTML Text Editor';
 }
 
 $('revert').onclick = () => {
-  const bits = [`${edits.size} text edit(s)`];
-  if (deletions.length) bits.push(`${deletions.length} pending deletion(s)`);
-  if (!confirm(`Discard ${bits.join(' and ')} and reload the original?`
-    + (comments.length ? '\n\nComments are kept — use "Clear all" in the panel to remove those.' : ''))) return;
+  const n = edits.size + deletions.length;
+  if (!n) return;
+  if (!confirm(`Discard ${n} unsaved change${n === 1 ? '' : 's'} and go back to the file as it was last saved?`
+    + (comments.length ? '\n\nComments are not affected.' : ''))) return;
   edits.clear();
   deletions = [];
   if (titleRun) $('docTitle').value = titleRun.text;
-  frame.srcdoc = instrument(scan);
-  refreshEditCount();
-  renderDeletions();
+  reloadPreview();
+  toast('Changes discarded.');
 };
 
-$('save').onclick = save;
-document.addEventListener('keydown', (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
-});
+// Re-render the preview from the source, keeping the reader where they were.
+function reloadPreview() {
+  pendingView = captureView();
+  quietReady = true;
+  frame.srcdoc = instrument(scan);
+}
 
-async function save() {
-  if (!scan || !dirty()) return;
+/* ---- keeping your place across a reload ---- */
+
+function captureView() {
+  const doc = frame.contentDocument;
+  if (!doc?.body) return null;
+  const se = doc.scrollingElement || doc.documentElement;
+  return {
+    zoom: zoomFactor,
+    x: se.scrollLeft,
+    y: se.scrollTop,
+    slide: currentSlide(doc),
+    scrollMode: doc.body.classList.contains('scroll-mode'),
+  };
+}
+
+function restoreView(doc, v) {
+  zoomFactor = v.zoom;
+  applyZoom();
+  if (v.scrollMode && !doc.body.classList.contains('scroll-mode')) doc.getElementById('mode-toggle')?.click();
+  if (v.slide > 1) goToSlide(doc, v.slide);
+  (doc.scrollingElement || doc.documentElement).scrollTo(v.x, v.y);
+}
+
+/* ---- the Changes tab ---- */
+
+// Only the part of a run that changed, with a little context either side.
+function diffNode(before, after) {
+  let a = 0;
+  while (a < before.length && a < after.length && before[a] === after[a]) a++;
+  let b = 0;
+  while (b < before.length - a && b < after.length - a
+    && before[before.length - 1 - b] === after[after.length - 1 - b]) b++;
+  const CTX = 28;
+  const box = el('div', 'diff');
+  const lead = before.slice(0, a);
+  if (lead.length > CTX) box.append(el('span', 'ell', '…'), document.createTextNode(lead.slice(-CTX)));
+  else box.append(document.createTextNode(lead));
+  const gone = before.slice(a, before.length - b);
+  const added = after.slice(a, after.length - b);
+  if (gone) box.append(el('del', '', gone));
+  if (added) box.append(el('ins', '', added));
+  if (!gone && !added) box.append(el('ins', '', '(whitespace)'));
+  const tail = before.slice(before.length - b);
+  if (tail.length > CTX) box.append(document.createTextNode(tail.slice(0, CTX)), el('span', 'ell', '…'));
+  else box.append(document.createTextNode(tail));
+  return box;
+}
+
+function locationOf(node) {
+  const doc = frame.contentDocument;
+  const c = doc && cards(doc);
+  const elx = node?.nodeType === 3 ? node.parentElement : node;
+  const card = c && elx?.closest(c.kind === 'slide' ? '.slide' : '.page');
+  if (card) return `${c.kind === 'slide' ? 'Slide' : 'Page'} ${c.els.indexOf(card) + 1}`;
+  return (elx && headingAbove(elx)) || 'In the document';
+}
+
+function undoEdit(index) {
+  const run = scan.runs[index];
+  if (titleRun && index === titleRun.index) {
+    $('docTitle').value = titleRun.text;
+    edits.delete(index);
+    renderAll();
+    return;
+  }
+  const n = runNode.get(index);
+  if (n?.isConnected) {
+    n.data = run.text;
+    reconcile(editingHost(n));
+  } else {
+    // The node itself is gone (the run was emptied, and the browser may have
+    // removed its <strong> too): put back the whole editable element it lived in.
+    const doc = frame.contentDocument;
+    let host = null;
+    for (const [id, list] of subtreeRuns) {
+      if (!list.includes(run)) continue;
+      const cand = doc.querySelector(`[data-hep="${id}"][contenteditable]`);
+      if (cand && editingHost(cand) === cand) { host = cand; break; }
+    }
+    if (host) restore(host, Number(host.getAttribute('data-hep')));
+    else edits.delete(index);
+  }
+  renderAll();
+  scheduleLayout();
+}
+
+function renderChanges() {
+  const list = $('changeList');
+  list.innerHTML = '';
+  if (!scan) return;
+  const items = [...edits].map(([index, text]) => ({ run: scan.runs[index], text }))
+    .sort((x, y) => x.run.start - y.run.start);
+
+  if (lostEdits.length) {
+    const g = el('div', 'group');
+    g.append(el('span', 'grow', `Couldn’t carry across · ${lostEdits.length}`));
+    g.append(linkBtn('Dismiss', () => { lostEdits = []; renderChanges(); }, 'quiet'));
+    list.append(g);
+    list.append(el('p', 'caveat', 'The file was changed (probably by Claude) where you had also edited, so these '
+      + 'edits could not be placed safely. Copy one and retype it where it belongs.'));
+    for (const e of lostEdits) {
+      const card = el('div', 'card info');
+      card.append(diffNode(e.was, e.now));
+      const actions = el('div', 'actions');
+      actions.append(linkBtn('Copy my text', async () => {
+        try { await navigator.clipboard.writeText(e.now); toast('Copied.'); } catch { console.log(e.now); }
+      }));
+      card.append(actions);
+      list.append(card);
+    }
+  }
+
+  if (!items.length && !deletions.length && !lostEdits.length) {
+    list.append(emptyState('No unsaved changes',
+      'Click any text in the document and type to change it. Every change you make is listed here '
+      + 'until you save, and can be undone one at a time.'));
+    return;
+  }
+
+  if (items.length) {
+    const g = el('div', 'group');
+    g.append(el('span', '', `Text edits · ${items.length}`));
+    list.append(g);
+    for (const { run, text } of items) {
+      const isTitle = titleRun && run.index === titleRun.index;
+      const node = isTitle ? null : runNode.get(run.index);
+      const card = el('div', `card edit${node?.isConnected ? ' clickable' : ''}`);
+      const meta = el('div', 'meta');
+      meta.append(el('span', 'loc', isTitle ? 'Document title' : locationOf(node || frame.contentDocument?.querySelector(`[data-hep="${run.elementId}"]`))));
+      if (text === '') meta.append(el('span', 'status declined', 'Emptied'));
+      card.append(meta, diffNode(run.text, text));
+      if (node?.isConnected) card.onclick = () => reveal(node);
+      const actions = el('div', 'actions');
+      if (node?.isConnected) actions.append(linkBtn('Show', () => reveal(node)));
+      actions.append(linkBtn('Undo', () => undoEdit(run.index), 'quiet'));
+      card.append(actions);
+      list.append(card);
+    }
+  }
+
+  if (deletions.length) {
+    const g = el('div', 'group');
+    g.append(el('span', 'grow', `To be deleted on save · ${deletions.length}`));
+    g.append(linkBtn('Restore all', () => { for (const d of [...deletions]) restoreDeletion(d); }));
+    list.append(g);
+    for (const d of deletions) {
+      const card = el('div', 'card deletion');
+      const meta = el('div', 'meta');
+      meta.append(el('span', 'loc', commentWhere(d)));
+      meta.append(el('span', '', `${d.noun}${d.inside ? ` — ${d.inside}` : ''}`));
+      const what = el('div', 'diff');
+      what.append(el('del', '', d.text || `(${d.noun})`));
+      const actions = el('div', 'actions');
+      actions.append(linkBtn('Restore', () => restoreDeletion(d)));
+      card.append(meta, what, actions);
+      list.append(card);
+    }
+    /*
+     * On fixed-page templates nothing moves up to fill the gap — each page is a
+     * rigid card and content never reflows between pages. Saying so here stops the
+     * result being a surprise, and points at the only thing that can fix it.
+     */
+    if (deletions.some((d) => d.kind === 'page' || d.kind === 'slide')) {
+      list.append(el('p', 'caveat', 'Pages and slides are a fixed size, so the space left behind stays empty — '
+        + 'nothing moves up from the next one. Leave a comment asking Claude to re-flow them if you want the gap closed.'));
+    }
+  }
+}
+
+/* ---- highlighting the user's own edits ---- */
+
+function paintEdits() {
+  const doc = frame.contentDocument;
+  if (!CAN_HIGHLIGHT || !doc?.defaultView?.CSS?.highlights) return;
+  const win = doc.defaultView;
+  const ranges = [];
+  if (showEdits) {
+    for (const index of edits.keys()) {
+      const n = runNode.get(index);
+      if (!n?.isConnected || !n.data) continue;
+      const r = doc.createRange();
+      r.selectNodeContents(n);
+      ranges.push(r);
+    }
+  }
+  win.CSS.highlights.set('hep-edited', new win.Highlight(...ranges));
+}
+
+$('showEdits').onchange = () => {
+  showEdits = $('showEdits').checked;
+  try { localStorage.setItem('hep-show-edits', showEdits ? '1' : '0'); } catch { /* private window */ }
+  paintEdits();
+};
+try { showEdits = localStorage.getItem('hep-show-edits') !== '0'; } catch { /* private window */ }
+$('showEdits').checked = showEdits;
+
+/* ---- the Checks tab ---- */
+
+function renderChecks() {
+  const list = $('checkList');
+  list.innerHTML = '';
+  if (!scan) return;
+  const r = lastLayout;
+
+  if (r) {
+    const total = r.els.length;
+    const box = el('div', `summary${r.over.length ? ' bad' : ''}`);
+    box.append(el('span', 'big', r.over.length ? '!' : '✓'));
+    const plural = (n) => `${n} ${r.noun}${n === 1 ? '' : 's'}`;
+    box.append(el('span', '', r.over.length
+      ? `${plural(r.over.length)} of ${total} overflow${r.over.length === 1 ? 's' : ''} — the extra text will be cut off in the PDF.`
+      : `All ${plural(total)} fit.${r.tightest.n ? ` The tightest is ${r.noun} ${r.tightest.n}, with ${Math.max(0, r.tightest.mm).toFixed(0)}mm to spare.` : ''}`));
+    list.append(box);
+    for (const o of r.over) {
+      const card = el('div', 'card problem clickable');
+      const meta = el('div', 'meta');
+      meta.append(el('span', 'loc', `${r.noun[0].toUpperCase()}${r.noun.slice(1)} ${o.n}`));
+      meta.append(el('span', '', `over by ${Math.max(1, Math.round(o.px / MM))}mm`));
+      card.append(meta, el('div', 'note', `Shorten the text on this ${r.noun}, or leave a comment asking Claude to split it.`));
+      card.onclick = () => reveal(o.el);
+      const actions = el('div', 'actions');
+      actions.append(linkBtn('Show', () => reveal(o.el)));
+      card.append(actions);
+      list.append(card);
+    }
+  } else {
+    const box = el('div', 'summary');
+    box.append(el('span', 'big', '↕'), el('span', '', 'This document flows like a web page, so text can’t overflow a page here.'));
+    list.append(box);
+  }
+
+  const f = lastFidelity;
+  const notes = [];
+  if (f?.unfixable?.length) notes.push(['Fonts that couldn’t load', `${f.unfixable.join(', ')}. The preview uses a fallback typeface; the file and its PDF are unaffected.`]);
+  if (f?.brokenImages?.length) notes.push(['Images that couldn’t load', `${f.brokenImages.length} image${f.brokenImages.length === 1 ? '' : 's'} referenced by a relative path. They will appear in the PDF if they sit next to the file.`]);
+  if (f?.substituted?.length || f?.logosFixed?.length) notes.push(['Supplied by the editor', 'This document points at brand assets by relative path, so the preview uses the editor’s own copies. The file itself is untouched.']);
+  const ro = lastReadiness.skipped.length;
+  if (ro) notes.push(['Read-only text', `${ro} piece${ro === 1 ? '' : 's'} of text can’t be edited here — usually text the document writes itself, such as a slide counter. You can still comment on it.`]);
+
+  if (notes.length) {
+    const g = el('div', 'group');
+    g.append(el('span', '', 'Preview notes'));
+    list.append(g);
+    for (const [head, body] of notes) {
+      const card = el('div', 'card info');
+      card.append(el('div', 'meta'), el('div', 'note', body));
+      card.firstChild.append(el('span', 'loc', head));
+      list.append(card);
+    }
+  }
+}
+
+/* ---- the panel itself ---- */
+
+let panelTab = 'comments';
+let panelChosen = false;   // the user opened or closed it themselves for this document
+
+function openPanel(tab) {
+  if (tab) selectTab(tab);
+  document.body.classList.add('panel-open');
+  $('panelToggle').setAttribute('aria-expanded', 'true');
+  hideCommentAffordances();
+}
+function closePanel() {
+  document.body.classList.remove('panel-open');
+  $('panelToggle').setAttribute('aria-expanded', 'false');
+  hideCommentAffordances();
+}
+function selectTab(tab) {
+  panelTab = tab;
+  for (const t of ['comments', 'changes', 'checks']) {
+    $(`tab-${t}`).setAttribute('aria-selected', String(t === tab));
+    $(`pane-${t}`).classList.toggle('active', t === tab);
+  }
+}
+for (const t of ['comments', 'changes', 'checks']) $(`tab-${t}`).onclick = () => selectTab(t);
+document.querySelector('#panel .tabs').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const order = ['comments', 'changes', 'checks'];
+  const next = order[(order.indexOf(panelTab) + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
+  selectTab(next);
+  $(`tab-${next}`).focus();
+});
+$('panelToggle').onclick = () => {
+  panelChosen = true;
+  if (document.body.classList.contains('panel-open')) closePanel(); else openPanel();
+};
+$('panelClose').onclick = () => { panelChosen = true; closePanel(); };
+$('editCount').onclick = () => openPanel('changes');
+$('fit').onclick = () => openPanel('checks');
+$('fidelity').onclick = () => openPanel('checks');
+$('commentCount').onclick = () => openPanel('comments');
+
+// Open the panel by itself when a document arrives with something to look at.
+function autoOpenPanel() {
+  if (panelChosen) return;
+  if (comments.length) openPanel('comments');
+  else if (lastLayout?.over?.length) openPanel('checks');
+}
+
+/* ---- keyboard ---- */
+
+function onShortcut(e) {
+  const mod = e.metaKey || e.ctrlKey;
+  const k = e.key.toLowerCase();
+  if (mod && k === 's') { e.preventDefault(); save(); return; }
+  if (!scan) { if (mod && k === 'o') { e.preventDefault(); openFile(); } return; }
+  if (mod && k === 'f') { e.preventDefault(); openFind(); return; }
+  if (mod && k === 'k') { if (startComment()) e.preventDefault(); return; }
+  if (mod && k === 'o') { e.preventDefault(); openFile(); return; }
+  if (mod && (e.key === '\\' || e.code === 'Backslash')) {
+    e.preventDefault();
+    panelChosen = true;
+    if (document.body.classList.contains('panel-open')) closePanel(); else openPanel();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if ($('composer').classList.contains('show')) { closeComposer(); return; }
+    if (findState.open) { closeFind(); return; }
+    hideCommentAffordances();
+  }
+}
+document.addEventListener('keydown', onShortcut);
+
+/* ---- save ---- */
+
+/*
+ * Save into the same file. Returns true when the document is saved (or there was
+ * nothing to save), false when it wasn't.
+ *
+ * Before writing, the file on disk is compared with what was loaded. If something
+ * else — usually Claude — has changed it since, writing our copy would silently
+ * throw that work away, which is exactly what used to happen. Instead the user is
+ * offered the new version with their own changes carried across.
+ */
+async function save({ quiet = false } = {}) {
+  if (!scan) return false;
+  if (!dirty()) return true;
+  if (saving) return false;
 
   const bad = overflowing();
-  if (bad && !confirm(
-    `${bad} page(s) currently overflow and will be clipped when the PDF is generated.\n\nSave anyway?`
-  )) return;
+  if (bad && !quiet && !confirm(
+    `${bad} ${cards(frame.contentDocument)?.noun || 'page'}${bad === 1 ? '' : 's'} currently overflow, and the extra text will be cut off in the PDF.\n\nSave anyway?`
+  )) return false;
 
-  let html, changed;
+  saving = true;
   try {
-    ({ html, changed } = applyEdits(
-      scan,
-      [...edits].map(([index, text]) => ({ index, text })),
-      deletions.map((d) => d.id),
-    ));
-    // The review block goes in afterwards: it lives outside every text run, so
-    // it cannot disturb the offsets applyEdits just used.
-    html = writeReview(html, persistable(comments));
-  } catch (err) {
-    toast(`Not saved — ${err.message}`, true);
-    return;
-  }
-
-  if (!handle) {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast(`Downloaded a copy — ${savedSummary(changed, deletions.length)}`);
-    return;
-  }
-
-  try {
-    if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted'
-      && await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
-      toast('Permission to write the file was declined.', true);
-      return;
+    let html, changed;
+    try {
+      ({ html, changed } = applyEdits(
+        scan,
+        [...edits].map(([index, text]) => ({ index, text })),
+        deletions.map((d) => d.id),
+      ));
+      // The review block goes in afterwards: it lives outside every text run, so
+      // it cannot disturb the offsets applyEdits just used. Left exactly as it was
+      // when no comment changed — Claude writes it in its own layout.
+      if (reviewDirty()) html = writeReview(html, persistable(comments));
+    } catch (err) {
+      toast(`Not saved — ${err.message}`, true);
+      return false;
     }
-    const w = await handle.createWritable();
-    await w.write(html);
-    await w.close();
-  } catch (err) {
-    toast(`Not saved — ${err.message}`, true);
-    return;
-  }
 
-  // The saved file is the new baseline, so rescan against it. The deleted blocks
-  // are gone from the source now, so the pending list starts empty again.
-  const removed = deletions.length;
-  scan = scanDocument(html);
-  edits.clear();
-  deletions = [];
-  titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
-  loadedReviewJSON = JSON.stringify(persistable(comments));
-  frame.srcdoc = instrument(scan);
-  refreshEditCount();
-  renderDeletions();
-  toast(`Saved ${fileName} — ${savedSummary(changed, removed)}`);
+    if (!handle) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      a.download = fileName;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      toast(`Downloaded a copy — ${savedSummary(changed, deletions.length)}. Your original file is unchanged.`);
+      return true;
+    }
+
+    try {
+      if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted'
+        && await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+        toast('Permission to write the file was declined.', true);
+        return false;
+      }
+      if (await changedOnDisk()) {
+        offerNewVersion('Not saved: this file was changed outside the editor since you opened it — probably by Claude. '
+          + 'Saving would have overwritten those changes.', true);
+        return false;
+      }
+      const w = await handle.createWritable();
+      await w.write(html);
+      await w.close();
+      const f = await handle.getFile();
+      baseline = { lastModified: f.lastModified, size: f.size, text: html };
+    } catch (err) {
+      toast(`Not saved — ${err.message}`, true);
+      return false;
+    }
+
+    // The saved file is the new baseline, so rescan against it. The deleted blocks
+    // are gone from the source now, so the pending list starts empty again.
+    const removed = deletions.length;
+    savedEdits += changed;
+    scan = scanDocument(html);
+    edits.clear();
+    deletions = [];
+    titleRun = scan.runs.find((r) => r.parentTag === 'title' && !r.wsOnly) || null;
+    loadedReviewJSON = JSON.stringify(persistable(comments));
+    reloadPreview();
+    hideBanner();
+    renderAll();
+    if (!quiet) toast(`Saved ${fileName} — ${savedSummary(changed, removed)}`);
+    return true;
+  } finally {
+    saving = false;
+  }
 }
 
 function savedSummary(changed, removed) {
   const parts = [];
-  if (changed) parts.push(`${changed} text block${changed === 1 ? '' : 's'} changed`);
+  if (changed) parts.push(`${changed} text change${changed === 1 ? '' : 's'}`);
   if (removed) parts.push(`${removed} block${removed === 1 ? '' : 's'} deleted`);
   if (comments.length) parts.push(`${comments.length} comment${comments.length === 1 ? '' : 's'} stored`);
   if (parts.length === 0) parts.push('comments cleared');
   return parts.join(', ');
 }
 
+$('save').onclick = () => save();
+
 window.addEventListener('beforeunload', (e) => {
   if (dirty()) { e.preventDefault(); e.returnValue = ''; }
 });
 
+/* ---- when the file changes on disk ---- */
+
+/*
+ * The round trip is: comment here, Claude edits the file, come back. The editor
+ * watches the file while it is open. With nothing unsaved it simply reloads —
+ * keeping your place — so Claude's work appears by itself. With unsaved work it
+ * asks first, and then carries that work across onto the new version.
+ */
+let checking = false;
+let dismissedFor = 0;
+
+async function changedOnDisk() {
+  if (!handle || !baseline) return false;
+  const f = await handle.getFile();
+  if (f.lastModified === baseline.lastModified && f.size === baseline.size) return false;
+  const t = await f.text();
+  if (t === baseline.text) { baseline.lastModified = f.lastModified; return false; }
+  return f;
+}
+
+async function checkDisk() {
+  if (!handle || !baseline || saving || checking || document.visibilityState !== 'visible') return;
+  checking = true;
+  try {
+    const f = await changedOnDisk();
+    if (!f) return;
+    if (!dirty() && !$('composer').classList.contains('show')) {
+      await reloadFromDisk(false);
+      toast('Updated — this file was changed outside the editor, probably by Claude.');
+    } else if (f.lastModified !== dismissedFor) {
+      offerNewVersion('This file was changed outside the editor — probably by Claude — and you have unsaved changes here.');
+      dismissedFor = f.lastModified;
+    }
+  } catch { /* permission lapsed or file moved: nothing to compare against */ } finally {
+    checking = false;
+  }
+}
+setInterval(checkDisk, 2000);
+window.addEventListener('focus', checkDisk);
+document.addEventListener('visibilitychange', checkDisk);
+
+function offerNewVersion(text, conflict = false) {
+  $('bannerText').textContent = text;
+  $('bannerReload').textContent = dirty() ? 'Load the new version and keep my changes' : 'Load the new version';
+  $('bannerReload').onclick = () => reloadFromDisk(true);
+  $('bannerDismiss').textContent = conflict ? 'Cancel' : 'Not now';
+  $('banner').classList.add('show');
+}
+function hideBanner() { $('banner').classList.remove('show'); }
+$('bannerDismiss').onclick = hideBanner;
+
+/*
+ * Load the newer file and, if asked, carry unsaved work across. Edits are matched
+ * by the text they replaced: if that text still appears in the new version (in
+ * the same position among identical copies), the edit is re-applied. Edits to text
+ * that has since changed can't be placed safely, so they are listed instead of
+ * guessed. New comments come across whole — they are anchored by text anyway.
+ */
+async function reloadFromDisk(carry) {
+  if (!handle) return;
+  const file = await handle.getFile();
+  const text = await file.text();
+  let keep = null;
+  if (carry && dirty()) {
+    const savedIds = savedCommentIds();
+    keep = {
+      edits: [...edits].map(([index, t]) => {
+        const run = scan.runs[index];
+        const same = scan.editable.filter((x) => x.text === run.text);
+        return { was: run.text, now: t, ord: same.indexOf(run), of: same.length,
+          title: titleRun && index === titleRun.index };
+      }),
+      comments: comments.filter((c) => !savedIds.has(c.id)),
+      deletions: deletions.map((d) => d.text),
+    };
+  }
+  hideBanner();
+  await load(file, handle, { text, view: captureView() || { zoom: zoomFactor, x: 0, y: 0, slide: 0 }, carry: keep });
+}
+
+function applyCarry(keep) {
+  const lost = [];
+  for (const e of keep.edits) {
+    if (e.title) {
+      if (titleRun && titleRun.text === e.was) { $('docTitle').value = e.now; edits.set(titleRun.index, e.now); }
+      else lost.push(e);
+      continue;
+    }
+    const same = scan.editable.filter((x) => x.text === e.was);
+    const run = same.length === e.of ? same[e.ord] : same.length === 1 ? same[0] : null;
+    const node = run && runNode.get(run.index);
+    if (!node) { lost.push(e); continue; }
+    node.data = e.now;
+    reconcile(editingHost(node));
+  }
+  lostEdits = lost.filter((e) => e.now.trim());
+  if (lostEdits.length) openPanel('changes');
+  for (const c of keep.comments) comments.push({ ...c, id: nextCommentId++ });
+  sortComments();
+  resolveComments(frame.contentDocument);
+
+  const bits = [`Loaded the new version`];
+  const kept = keep.edits.length - lost.length;
+  const all = keep.edits.length;
+  if (kept) bits.push(kept === all ? `kept ${all === 1 ? 'your edit' : `all ${all} of your edits`}` : `kept ${kept} of your ${all} edits`);
+  if (keep.comments.length) bits.push(`kept ${keep.comments.length} new comment${keep.comments.length === 1 ? '' : 's'}`);
+  let msg = `${bits.join(', ')}.`;
+  if (lost.length) {
+    msg += ` ${lost.length} edit${lost.length === 1 ? '' : 's'} couldn’t be placed because that text has changed — `
+      + lost.map((e) => `“${e.now.slice(0, 60)}”`).join('; ') + ' (also in the browser console).';
+    console.info('Edits that could not be carried across:', lost);
+  }
+  if (keep.deletions.length) msg += ` ${keep.deletions.length} pending deletion${keep.deletions.length === 1 ? '' : 's'} will need redoing.`;
+  toast(msg, lost.length > 0 || keep.deletions.length > 0);
+}
+
+/* ---------------------------------------------------------- find and replace */
+
+/*
+ * Find searches every piece of text in the document, but only replaces text that
+ * can be edited safely — matches in read-only text are counted and said so. A
+ * replacement goes through exactly the same path as typing: the text node changes
+ * and reconcile() records the edit, so it is listed in Changes and undoable there.
+ */
+const findState = { open: false, matches: [], i: -1, readOnly: 0 };
+
+function openFind() {
+  if (!scan) return;
+  findState.open = true;
+  $('findbar').classList.add('show');
+  const sel = frame.contentDocument?.getSelection()?.toString().trim();
+  if (sel && sel.length < 80 && !/\n/.test(sel)) $('findInput').value = sel;
+  $('findInput').focus();
+  $('findInput').select();
+  runFind();
+}
+function closeFind() {
+  findState.open = false;
+  $('findbar').classList.remove('show');
+  const win = frame.contentWindow;
+  win?.CSS?.highlights?.delete('hep-find');
+  win?.CSS?.highlights?.delete('hep-find-current');
+}
+
+function findRegex() {
+  const q = $('findInput').value;
+  if (!q) return null;
+  const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const body = $('findWord').checked ? `(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])` : esc;
+  return new RegExp(body, $('findCase').checked ? 'gu' : 'giu');
+}
+
+function runFind({ keepIndex = false } = {}) {
+  const doc = frame.contentDocument;
+  if (!doc?.body) return;
+  const re = findRegex();
+  const prev = findState.i;
+  findState.matches = [];
+  findState.readOnly = 0;
+  if (re) {
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (HTML_WS.test(n.data) || n.parentElement.closest('script, style, [data-hep-deleted]')) continue;
+      const editable = nodeToRun.has(n) && !!n.parentElement.closest('[contenteditable="true"]');
+      for (const m of n.data.matchAll(re)) {
+        if (!m[0]) continue;
+        if (editable) findState.matches.push({ node: n, start: m.index, end: m.index + m[0].length });
+        else findState.readOnly++;
+      }
+    }
+  }
+  const total = findState.matches.length;
+  findState.i = total ? (keepIndex ? Math.min(Math.max(prev, 0), total - 1) : nextFromView(doc)) : -1;
+  paintFind();
+}
+
+// Start from the first match at or after what the reader is looking at.
+function nextFromView(doc) {
+  const slide = currentSlide(doc);
+  const slides = slideList(doc);
+  for (let k = 0; k < findState.matches.length; k++) {
+    const elx = findState.matches[k].node.parentElement;
+    if (slides && slide) {
+      const s = elx.closest('.slide');
+      if (s && slides.indexOf(s) + 1 >= slide) return k;
+    } else if (elx.getBoundingClientRect().bottom >= 0) return k;
+  }
+  return 0;
+}
+
+function matchRange(m) {
+  const r = m.node.ownerDocument.createRange();
+  r.setStart(m.node, m.start);
+  r.setEnd(m.node, m.end);
+  return r;
+}
+
+function paintFind() {
+  const doc = frame.contentDocument;
+  const total = findState.matches.length;
+  const q = $('findInput').value;
+  $('findCount').textContent = !q ? '' : total ? `${findState.i + 1} of ${total}` : 'No matches';
+  $('findNote').textContent = findState.readOnly
+    ? `+${findState.readOnly} in text that can’t be edited`
+    : '';
+  $('replaceOne').disabled = !total;
+  $('replaceAll').disabled = !total;
+  $('findPrev').disabled = total < 2;
+  $('findNext').disabled = total < 2;
+  if (!CAN_HIGHLIGHT || !doc) return;
+  const win = doc.defaultView;
+  win.CSS.highlights.set('hep-find', new win.Highlight(...findState.matches.map(matchRange)));
+  const cur = findState.matches[findState.i];
+  win.CSS.highlights.set('hep-find-current', cur ? new win.Highlight(matchRange(cur)) : new win.Highlight());
+}
+
+function stepFind(dir) {
+  const total = findState.matches.length;
+  if (!total) return;
+  findState.i = (findState.i + dir + total) % total;
+  paintFind();
+  revealMatch();
+}
+function revealMatch() {
+  const m = findState.matches[findState.i];
+  if (!m) return;
+  const r = matchRange(m);
+  reveal(r);
+  frame.contentWindow?.CSS?.highlights?.delete('hep-flash');
+}
+
+/*
+ * Unless "Match case" is on, a replacement follows the capitalisation of what it
+ * replaces: "stockist" → "retailer" turns "Stockist" at the start of a sentence
+ * into "Retailer", and an all-capitals label stays in capitals.
+ */
+function matchCase(found, repl) {
+  if ($('findCase').checked || !repl) return repl;
+  if (found.length > 1 && found === found.toUpperCase() && found !== found.toLowerCase()) return repl.toUpperCase();
+  if (found[0] !== found[0].toLowerCase()) return repl[0].toUpperCase() + repl.slice(1);
+  return repl;
+}
+
+// Replace matches by writing their text nodes, then let reconcile() record it.
+function replaceMatches(list) {
+  const repl = $('replaceInput').value;
+  const byNode = new Map();
+  for (const m of list) {
+    if (!byNode.has(m.node)) byNode.set(m.node, []);
+    byNode.get(m.node).push(m);
+  }
+  const undo = [];
+  const hosts = new Set();
+  for (const [node, ms] of byNode) {
+    undo.push({ node, data: node.data });
+    let d = node.data;
+    for (const m of ms.sort((a, b) => b.start - a.start)) {
+      d = d.slice(0, m.start) + matchCase(d.slice(m.start, m.end), repl) + d.slice(m.end);
+    }
+    node.data = d;
+    const h = editingHost(node);
+    if (h) hosts.add(h);
+  }
+  for (const h of hosts) reconcile(h);
+  paintEdits();
+  renderAll();
+  scheduleLayout();
+  return () => {
+    for (const { node, data } of undo) node.data = data;
+    for (const h of hosts) reconcile(h);
+    paintEdits();
+    renderAll();
+    scheduleLayout();
+    if (findState.open) runFind({ keepIndex: true });
+  };
+}
+
+$('findToggle').onclick = () => (findState.open ? closeFind() : openFind());
+$('findClose').onclick = closeFind;
+$('findPrev').onclick = () => stepFind(-1);
+$('findNext').onclick = () => stepFind(1);
+$('findInput').addEventListener('input', () => { runFind(); revealMatch(); });
+$('findCase').onchange = $('findWord').onchange = () => { runFind(); revealMatch(); };
+$('findInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+});
+$('replaceInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('replaceOne').click(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+});
+$('replaceOne').onclick = () => {
+  const m = findState.matches[findState.i];
+  if (!m) return;
+  replaceMatches([m]);
+  runFind({ keepIndex: true });
+  revealMatch();
+};
+$('replaceAll').onclick = () => {
+  const list = [...findState.matches];
+  if (!list.length) return;
+  const ro = findState.readOnly;
+  const undo = replaceMatches(list);
+  runFind();
+  toast(`Replaced ${list.length} match${list.length === 1 ? '' : 'es'}${ro ? ` — ${ro} more in read-only text were left alone` : ''}. Each one is listed under Changes.`,
+    false, { label: 'Undo', run: undo });
+};
+
 /*
  * Test hook. The native file picker can't be driven from a test, so this lets a
  * harness load a document and inspect the correlation between source and
- * preview. Read-only inspection plus the same load() the UI uses.
+ * preview. Read-only inspection plus the same paths the UI uses.
  */
 window.__hep = {
   load,
@@ -2689,18 +3890,22 @@ window.__hep = {
     editableRuns: scan ? scan.editable.length : 0,
     mappedNodes: scan
       ? [...frame.contentDocument.querySelectorAll('[data-hep][contenteditable]')]
-          .reduce((n, el) => n + textNodesOf(el).length, 0)
+          .reduce((n, e) => n + textNodesOf(e).length, 0)
       : 0,
     editableElements: scan
       ? frame.contentDocument.querySelectorAll('[data-hep][contenteditable]').length : 0,
     unverifiedElements: scan
       ? frame.contentDocument.querySelectorAll('[data-hep]:not([contenteditable])').length : 0,
     edits: edits.size,
+    editList: [...edits].map(([i, t]) => ({ index: i, was: scan.runs[i].text, now: t })),
     comments: comments.length,
     commentsResolved: comments.filter((c) => c.resolved).length,
     deletions: deletions.length,
     canHighlight: CAN_HIGHLIGHT,
     zoom: zoomFactor,
+    slide: frame.contentDocument ? currentSlide(frame.contentDocument) : 0,
+    panelOpen: document.body.classList.contains('panel-open'),
+    panelTab,
     fidelityWarning: $('fidelity').hidden ? null : $('fidelity').textContent,
     logosSubstituted: (() => {
       const d = frame.contentDocument;
@@ -2718,30 +3923,32 @@ window.__hep = {
     pages: frame.contentDocument ? frame.contentDocument.querySelectorAll('.page').length : 0,
   }),
   // Simulate typing into the nth editable text node, exercising the real
-  // input path (including the guard and the integrity check).
+  // input path (including the integrity check).
   type: (n, text) => {
     const doc = frame.contentDocument;
-    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
-      for (const node of textNodesOf(el)) {
+    for (const e of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      for (const node of textNodesOf(e)) {
         if (n-- === 0) {
           node.data = text;
-          el.dispatchEvent(new doc.defaultView.InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+          e.dispatchEvent(new doc.defaultView.InputEvent('input', { bubbles: true, inputType: 'insertText' }));
           return true;
         }
       }
     }
     return false;
   },
+  // Exactly what save() would write, without writing it.
   build: () => {
-    const out = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text })));
-    return { ...out, html: writeReview(out.html, persistable(comments)) };
+    const out = applyEdits(scan, [...edits].map(([index, text]) => ({ index, text })), deletions.map((d) => d.id));
+    return { ...out, html: reviewDirty() ? writeReview(out.html, persistable(comments)) : out.html };
   },
+  save,
   // Add a comment on the nth editable text node, exercising the real path.
   comment: (n, note) => {
     const doc = frame.contentDocument;
-    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
-      if (el.offsetParent === null && el.getClientRects().length === 0) continue;
-      for (const node of textNodesOf(el)) {
+    for (const e of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      if (e.offsetParent === null && e.getClientRects().length === 0) continue;
+      for (const node of textNodesOf(e)) {
         if (n-- === 0) {
           const r = doc.createRange();
           r.setStart(node, 0);
@@ -2764,9 +3971,9 @@ window.__hep = {
   // Queue a deletion from the nth editable text node, exercising the real path.
   deleteAt: (n, which = 'block') => {
     const doc = frame.contentDocument;
-    for (const el of doc.querySelectorAll('[data-hep][contenteditable]')) {
-      if (el.offsetParent === null && el.getClientRects().length === 0) continue;
-      for (const node of textNodesOf(el)) {
+    for (const e of doc.querySelectorAll('[data-hep][contenteditable]')) {
+      if (e.offsetParent === null && e.getClientRects().length === 0) continue;
+      for (const node of textNodesOf(e)) {
         if (n-- === 0) {
           const t = deletionTargets(node);
           const target = which === 'section' ? t.section : t.block;
@@ -2779,7 +3986,7 @@ window.__hep = {
     }
     return false;
   },
-  restoreAll: () => { $('restoreAll').click(); },
+  restoreAll: () => { for (const d of [...deletions]) restoreDeletion(d); },
   recent: () => readRecent().then((r) => r.map((x) => ({ name: x.name, at: x.at }))),
   answer: (id, status, response) => {
     const c = comments.find((x) => x.id === id);
@@ -2787,11 +3994,29 @@ window.__hep = {
     c.status = status;
     c.response = response;
     sortComments();
-    renderComments();
     paintHighlights(frame.contentDocument);
+    renderAll();
     return true;
   },
   setZoom: (z) => { zoomFactor = z; applyZoom(); refreshLayout(); },
+  find: (q, opts = {}) => {
+    openFind();
+    $('findInput').value = q;
+    $('findCase').checked = !!opts.matchCase;
+    $('findWord').checked = !!opts.wholeWord;
+    runFind();
+    return { matches: findState.matches.length, readOnly: findState.readOnly };
+  },
+  replaceAll: (q, r, opts = {}) => {
+    window.__hep.find(q, opts);
+    $('replaceInput').value = r;
+    $('replaceAll').click();
+    return edits.size;
+  },
+  checkDisk,
+  goToSlide: (n) => goToSlide(frame.contentDocument, n),
+  openPanel,
+  closePanel,
 };
 </script>
 </body>

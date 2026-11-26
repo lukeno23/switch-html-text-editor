@@ -4,6 +4,90 @@ Running list of known issues and things deliberately left out. Newest first.
 
 ## Fixed
 
+### Save overwrote whatever had changed on disk since the file was opened
+*Found and fixed 26 Nov 2026, by simulating the intended round trip.* The editor
+kept the source it loaded and wrote that, plus the user's edits, on save. The
+workflow it exists for is: comment, Claude edits the file, come back. With the tab
+left open, one word changed and saved afterwards silently threw away everything
+Claude had done. Nothing compared the file on disk with the one loaded.
+
+Save now reads the file first and refuses if it has changed, offering the new
+version instead. The editor also watches the file while it is open (every 2s while
+visible, and on focus): with nothing unsaved it reloads by itself, keeping the
+scroll position and slide; with unsaved work it asks, then carries edits and new
+comments across. An edit is re-applied only where the text it replaced still exists
+in the new version, in the same position among identical copies — anything else is
+listed under Changes for the user to retype, never guessed.
+
+### Selecting a sentence and typing over it was refused
+*Found 26 Nov 2026; probably the bug users actually hit most.* Select every
+character of a text node and type, and Chrome doesn't edit the node — it removes it
+and inserts a new one. The integrity check saw an unknown node and restored the
+element: "That change was undone because it altered the document structure". A
+triple-click went wrong a different way: the selection runs to the start of the
+next block, so the guard refused it as crossing nodes (left alone, the browser would
+have merged the two paragraphs).
+
+`reconcile()` now adopts a new text node that stands where a mapped one was
+removed — same element, or a fresh copy of the same formatting element the browser
+recreated (`<strong>` for `<strong>`, `<b>` accepted for it). The guard clamps a
+selection that only *looks* wider than one run to the run it really covers and
+re-issues the edit through `execCommand`, which keeps the undo stack.
+
+### Deleting all of a run's text left it in the file
+*Found 26 Nov 2026.* The mirror image of the above. Delete every character of a run
+and Chrome removes the text node — and a `<strong>` that held it — without replacing
+them. The integrity check only looked for *unknown* nodes, so a *missing* one went
+unnoticed, the edit was never recorded, and the run stayed in the saved file: a
+paragraph blank on screen with Save disabled, or a bold lead-in gone from the screen
+but still in the PDF. `textNodesOf()`'s `trim()` filter made it worse by also hiding
+a run edited down to whitespace.
+
+`reconcile()` now reads every run under the edited element back from scratch on
+each input; a run whose node is gone is recorded as emptied, so the file gets an
+empty `<strong></strong>` where the screen shows nothing. Typing into an emptied
+element is allowed and adopted into its run. NBSPs the browser inserts to keep a
+space visible are turned back into ordinary spaces unless the run already used
+them, so deleting a lead-in no longer rewrites the next run's leading space.
+
+### The overflow list crashed whenever anything overflowed
+*Found 26 Nov 2026; in every release since 20 Aug.* The foldable-panel change gave
+each section a `.bar` header for its count chip — except the layout section, whose
+heading was never wrapped. `setTally()` threw on it, so every overflowing document
+showed the red pill but never the list or its Show me links, and because it threw
+inside `wire()`, the user was told "The preview could not be prepared for editing"
+on opening and after every save. Editing still worked, which is why it went
+unnoticed. Layout errors are now caught inside `wire()` so they can never do that
+again, and the list lives in the new Checks tab.
+
+### "Copy brief for Claude" pointed Claude at comments that weren't saved
+*Found 26 Nov 2026.* The brief says the comments are stored in the file; it was
+copied without saving. Pasted straight to Claude, it sent Claude looking for
+comments that weren't there — and when Claude then edited the file, the user's next
+save hit the overwrite bug above. Copy brief now saves first and refuses to copy if
+the save doesn't happen.
+
+### Every save jumped back to the start
+*Found 26 Nov 2026.* Saving rebuilt the preview from the new source, which reset the
+scroll position and sent a deck back to slide 1, and the load message replaced the
+"Saved" toast almost immediately. The view (scroll, zoom, slide, scroll-mode) is now
+captured before any reload and restored after it, using the deck's own next/prev
+buttons so its script stays in step, and our own reloads don't announce themselves.
+
+### Clearing comments left a stray newline on some hand-built pages
+*Found 26 Nov 2026, by the first hand-built page in the fixture set.* The block is
+inserted directly before `</body>` with no newline in front; stripping it replaced
+the match with a newline unconditionally. On a page ending `</script></body>` that
+added one, so "remove every comment and get the file back byte for byte" failed. It
+now puts back only the newline the block took with it.
+
+The same sweep found two engine-adjacent smaller ones: a `<div>` holding only
+`&nbsp;` was locked as "generated text", because JavaScript's `\s` and `trim()`
+count NBSP as whitespace while the browser keeps the node (scanner and DOM now both
+use HTML's own whitespace); and a review block Claude wrote with `json.dumps` was
+rewritten in the editor's layout on every save, even with no comment changed (it is
+now left alone unless a comment changes).
+
 ### The fixture test assumed a document nobody had reviewed yet
 *Found and fixed 24 Aug 2026, by testing a document that had already been through
 the editor.* The real-document test asserts "write a review block, clear it, and
@@ -292,8 +376,20 @@ rather than a fix.
 
 ### Comments on a deck need you to navigate to the slide first
 Hidden slides cannot be selected, so you can only comment on the slide you are
-looking at. That matches how you would work anyway, but there is no way to
-comment on a slide from a list view.
+looking at. That matches how you would work anyway. (Show me, Find and the Checks
+tab do navigate to the right slide since 26 Nov.)
+
+### Typing over a mix of bold and plain text is refused
+Since 26 Nov a selection inside ONE run can be typed over even when it looks wider,
+and a whole bold phrase can be replaced. A selection covering bold *and* plain text
+is still refused: the new text has to go into one run or the other, and either
+choice changes formatting the user didn't ask to change.
+
+### Claude marks comments done without saying what it did
+Seen on a real reviewed document (Nov 2026): nine comments set to `addressed`, none
+with a `response`. The panel says "Marked done, without a note." The brief now asks
+for a response explicitly; if it keeps happening, SKILL.md step 6 needs a stronger
+line in both skills — bundle that with the next real skill change.
 
 ### Stale anchors are flagged, not repaired
 If the quoted text changes — you edit it, or Claude rewrites it — the comment is
@@ -321,32 +417,22 @@ remove the ambiguity if it ever misleads anyone.
 
 ## Next session
 
-**State as of 23 Sep 2026:** the last behaviour change is `d7e540e`, the test suite is
-green against every fixture on disk, and both document skills are at v1.4 in org
-settings. Nothing is mid-flight.
+**State as of 26 Nov 2026:** the review-panel / safe-round-trip / find-and-replace
+work is shipped (see CHANGELOG). Nothing in either skill needs to change for it: the review block format
+and SKILL.md step 6 are untouched.
 
-What the second design system's testing covered (20 Aug, four documents; 24 Aug,
-two more including one already reviewed):
-
-- Both card shapes are detected correctly. Its A4 and deck carry
-  `.page-body`/`.slide-body`; an older playbook carries neither and is recognised by
-  its overflow-clipping cards instead.
-- Editing, comments (create, save, reopen, re-anchor, highlight, Claude's answers
-  read back), deletion of a table row and of a section, and byte-identical saves
-  were all verified on the new family.
-- `unverifiedElements` is 0 on all six: neither of its scripts writes text into the
-  page, so there is no equivalent of the Switch deck's slide counter.
+Tested in Nov: 44 real documents through the node suite (Switch, the second design
+system, two client families new to the editor, hand-built pages), and 12 in the
+browser, both documents and decks.
 
 What is **still untested**:
 
-- **A typeface the editor cannot lend.** Every document from that family embeds its
-  fonts, so nothing ever failed to load. Its two typefaces, which the editor does
-  not bundle, would be the first real case if one arrived without them.
-- **A third design system.** Every new family has found a bug; that is still the most
-  valuable test there is.
-
-Before building a feature on comments, read the stale-anchor entry under Open: the
-anchors of comments Claude has addressed usually don't survive.
+- **A typeface the editor cannot lend** (as before).
+- ~~Real Chrome, real user~~ — done 26 Nov: in Luke's Chrome with a real file picked
+  from disk, real keys (triple-click and type, ⌘Z, Enter and ⌘B refused, ⌘K, ⌘F,
+  ⌘S, arrow keys and Space on a deck), the write-permission prompt, Copy brief, and
+  Claude editing the file on disk both with and without unsaved work. The only
+  thing not driven for real is ⌘\\ — the automation can't send a backslash.
 
 ## Proposed upgrades
 
@@ -354,19 +440,12 @@ Still open, in priority order. Three items from the 19 Aug shortlist were built 
 same day: Claude writing back into the review block, recent documents, and
 collapsible panel sections.
 
-**Build first.**
-
-1. **Find and replace across the document.** The recurring job is "we renamed the
-   product / the date changed / the client's name is wrong" — currently 30 manual
-   edits or a Claude round-trip. Maps onto the engine as many run edits through the
-   well-tested path; show every match before committing.
-2. **Show your own edits, and a change list before saving.** Highlighting edited
-   runs is nearly free — the Custom Highlight API is already wired for comments —
-   and a before/after list plus pending deletions makes a careful save verifiable.
+Find and replace, and showing your own edits with a change list, were built on
+26 Nov 2026 (see CHANGELOG).
 
 **Worth a spike.**
 
-3. **Print to PDF from the editor.** The templates carry `@page` rules and
+1. **Print to PDF from the editor.** The templates carry `@page` rules and
    `-webkit-print-color-adjust: exact`, and `generate-pdf.py` drives the same
    Chromium engine. If `frame.contentWindow.print()` matches its output, wording
    changes stop needing Claude or the toolchain. Compare against real
@@ -382,15 +461,15 @@ collapsible panel sections.
    spike now buys fidelity as well as a shorter round trip. Diagnosing it needs no
    special tooling: decompress the PDF's content streams and look at the glyph
    offsets — whole numbers mean snapped, fractional means correct.
-4. **`showDirectoryPicker()` for the assets a logo substitute can't cover.** Fonts
+2. **`showDirectoryPicker()` for the assets a logo substitute can't cover.** Fonts
    and Switch logos are now lent from the editor's own bundle, which covers every
    broken asset in the ten test documents. A granted folder plus
    `DirectoryHandle.resolve()` would make the preview exact for *any* asset — a
    cover graphic, a photograph — but it costs a permission prompt and picking a
    folder two levels above the document, for a case that hasn't arisen yet.
 
-**Smaller quality-of-life.** Page indicator and jump-to-page; ⌘K to comment on a
-selection.
+**Smaller quality-of-life.** Page indicator and jump-to-page for long A4
+documents (⌘K to comment shipped 26 Nov).
 
 ## Won't fix (by design)
 

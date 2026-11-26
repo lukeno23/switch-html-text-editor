@@ -214,10 +214,10 @@ test('real document: scan, no-op and surgical edit', { skip: !existsSync(REAL_FI
   assertOffsetsSound(scan);
   assertNoOpIsByteIdentical(scan);
 
-  // Sanity: the document has real prose, and the embedded fonts are untouched.
-  // Enough to prove the scanner engaged, without assuming a document length —
-  // a 13-slide deck has ~108 runs where a 22-page paper has ~371.
-  assert.ok(scan.editable.length > 40, `expected real prose, got ${scan.editable.length} runs`);
+  // Sanity: the scanner engaged, and the embedded fonts are untouched. No
+  // assumption about length — a one-screen checklist has six runs, a 22-page
+  // paper ~371, and asserting "more than 40" failed on the short ones.
+  assert.ok(scan.editable.length > 0, 'expected some editable text');
   for (const r of scan.runs) {
     assert.ok(!r.raw.includes('data:font/woff2'), 'a font blob leaked into a text run');
     assert.ok(!r.raw.includes('@font-face'), 'CSS leaked into a text run');
@@ -382,8 +382,17 @@ test('real document: review block leaves every run and all markup alone', { skip
   const own = readReview(src);
   const bare = own.length ? writeReview(src, []) : src;
   if (own.length) {
-    assert.equal(writeReview(src, own), src,
-      'rewriting a file\'s own comments must reproduce it exactly');
+    /*
+     * Rewriting a file's own comments keeps everything outside the block and
+     * every comment exactly. The block's own layout may differ: Claude writes it
+     * with Python's json.dumps on one line, the editor pretty-prints it, and both
+     * are the same comments. (The editor no longer rewrites a block whose comments
+     * haven't changed, so this only happens when the user actually changes one.)
+     */
+    const again = writeReview(src, own);
+    assert.equal(writeReview(again, []), bare, 'everything outside the block must survive');
+    assert.deepEqual(readReview(again), own, 'every comment must survive');
+    assert.equal(writeReview(again, own), again, 'rewriting must be stable once in editor form');
   }
 
   const a = scanDocument(src);
@@ -548,4 +557,30 @@ test('real document: deleting a paragraph leaves all other markup untouched', { 
   for (const marker of ['===FONTS-START===', '===FONTS-END===']) {
     if (src.includes(marker)) assert.ok(html.includes(marker), `${marker} lost`);
   }
+});
+
+/* ------------------------------------------------- review block edge cases */
+
+test('clearing comments restores a page whose </body> follows a tag directly', () => {
+  // A hand-built page ending `</script></body>` once got a stray newline back.
+  const src = '<!DOCTYPE html><html><body><p>Hi</p><script>x()</script></body></html>\n';
+  const withBlock = writeReview(src, [{ id: 1, quote: 'Hi', note: 'n' }]);
+  assert.equal(readReview(withBlock).length, 1);
+  assert.equal(writeReview(withBlock, []), src);
+});
+
+test('a block written on one line by another tool round-trips its comments', () => {
+  const src = '<html><body><p>A</p>\n<!-- SWITCH-REVIEW-START\n[{"id": 1, "quote": "A", "note": "x", "status": "addressed"}]\nSWITCH-REVIEW-END -->\n</body></html>';
+  const own = readReview(src);
+  assert.equal(own.length, 1);
+  assert.equal(writeReview(src, []), '<html><body><p>A</p>\n</body></html>');
+  assert.deepEqual(readReview(writeReview(src, own)), own);
+});
+
+test('a cell holding only &nbsp; is an editable run, matching the DOM', () => {
+  // JavaScript's \\s includes NBSP; HTML's whitespace does not, and the
+  // browser keeps the node. Treating it as whitespace left its element locked.
+  const scan = scanDocument('<html><body><div class="sm">&nbsp;</div><p>t</p></body></html>');
+  assert.ok(scan.editable.some((r) => r.text === '\u00a0'));
+  assert.equal(applyEdits(scan, []).html, scan.source);
 });

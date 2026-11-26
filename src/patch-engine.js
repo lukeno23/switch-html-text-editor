@@ -131,8 +131,15 @@ function findTagEnd(src, start) {
   return -1;
 }
 
-function isWhitespaceOnly(s) {
-  return /^[\s ]*$/.test(s);
+/*
+ * HTML's own definition of whitespace — space, tab, LF, FF, CR — and nothing
+ * else. It has to match what the browser keeps as a text node, because the
+ * editor matches rendered text nodes to these runs one for one. JavaScript's \s
+ * also swallows NBSP, so a cell holding only `&nbsp;` used to be a run here and
+ * nothing in the preview, which left its element read-only for no reason.
+ */
+export function isWhitespaceOnly(s) {
+  return /^[ \t\n\r\f]*$/.test(s);
 }
 
 /*
@@ -476,7 +483,14 @@ export function hasReview(src) {
  * file byte-for-byte.
  */
 export function writeReview(src, comments) {
-  const stripped = src.replace(REVIEW_RE, '\n');
+  /*
+   * Put back exactly the line break the block took with it. The block is written
+   * immediately before </body> with no newline of its own in front, so on a page
+   * ending `</script></body>` there is no leading newline to restore — replacing
+   * it with one anyway left a stray line break, and clearing every comment no
+   * longer gave the original file back byte for byte.
+   */
+  const stripped = src.replace(REVIEW_RE, (m) => (m.startsWith('\n') ? '\n' : ''));
   if (!comments || comments.length === 0) return stripped;
 
   const json = escapeForComment(JSON.stringify(comments, null, 1));
